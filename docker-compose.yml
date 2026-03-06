@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # 后端服务 (FastAPI)
+  backend:
+    build: ./backend
+    container_name: cement_backend
+    ports:
+      - "18888:18888"
+    volumes:
+      - ./backend/sql_app.db:/app/sql_app.db  # 挂载数据库文件，实现持久化
+      - ./backend/data:/app/data              # 挂载配置与日志目录
+    restart: always
+    networks:
+      - cement_network
+
+  # 前端服务 (Vue + Nginx)
+  frontend:
+    build: ./frontend
+    container_name: cement_frontend
+    ports:
+      - "18080:18080"
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - cement_network
+
+networks:
+  cement_network:
+    driver: bridge
