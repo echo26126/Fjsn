@@ -1,0 +1,58 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+.npm/
+
+# Build outputs
+dist/
+dist-ssr/
+*.local
+.output/
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+ENV/
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Temporary files and logs
+*.log
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+*.zip
+*.xls
+*.xlsx
+*.png
+
+# Project specific exclusions
+sql_app.db
+excel_output*.txt
+tmp_*
+inspect_excel.py
+pip_list.txt
+test_auth_flow.py
+b_HQ3NLTVpYdF-*

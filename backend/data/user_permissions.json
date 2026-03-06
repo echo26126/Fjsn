@@ -1,0 +1,60 @@
+{
+  "roles": [
+    {
+      "role_id": "admin",
+      "role_name": "管理员",
+      "permissions": [
+        "*"
+      ]
+    },
+    {
+      "role_id": "analyst",
+      "role_name": "分析员",
+      "permissions": [
+        "agent.config.read",
+        "cockpit.region_config.read"
+      ]
+    },
+    {
+      "role_id": "viewer",
+      "role_name": "访客",
+      "permissions": [
+        "cockpit.region_config.read"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "user_id": "u_admin",
+      "user_name": "系统管理员",
+      "roles": [
+        "admin"
+      ],
+      "enabled": true
+    },
+    {
+      "user_id": "u_ops",
+      "user_name": "运营人员",
+      "roles": [
+        "analyst"
+      ],
+      "enabled": true
+    },
+    {
+      "user_id": "u_guest",
+      "user_name": "访客用户",
+      "roles": [
+        "analyst"
+      ],
+      "enabled": true
+    },
+    {
+      "user_id": "u_new",
+      "user_name": "新用户",
+      "roles": [
+        "viewer"
+      ],
+      "enabled": true
+    }
+  ]
+}

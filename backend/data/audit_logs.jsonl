@@ -1,0 +1,27 @@
+{"timestamp": "2026-03-04T23:58:50", "action": "agent.config.update", "operator": "qa-user", "details": {"changed_fields": ["temperature", "sql_prompt", "analysis_prompt"], "api_key_updated": false}}
+{"timestamp": "2026-03-04T23:58:50", "action": "agent.config.read_denied_edit", "operator": "readonly-user", "details": {"read_only": true}}
+{"timestamp": "2026-03-04T23:58:50", "action": "dashboard.region_config.update", "operator": "qa-user", "details": {"keys": ["region_city_map", "metric_units", "region_coords", "region_colors"]}}
+{"timestamp": "2026-03-05T00:47:28", "action": "agent.config.update", "operator": "qa-user", "details": {"changed_fields": [], "api_key_updated": false}}
+{"timestamp": "2026-03-05T00:47:28", "action": "agent.config.read_denied_edit", "operator": "readonly-user", "details": {"read_only": true}}
+{"timestamp": "2026-03-05T00:47:28", "action": "dashboard.region_config.update", "operator": "qa-user", "details": {"keys": ["region_city_map", "metric_units", "region_coords", "region_colors"]}}
+{"timestamp": "2026-03-05T00:47:28", "action": "agent.permissions.update_user_roles", "operator": "qa-user", "details": {"user_id": "u_guest", "roles": ["analyst"]}}
+{"timestamp": "2026-03-05T01:32:58", "action": "agent.config.update", "operator": "qa-user", "details": {"changed_fields": [], "api_key_updated": false}}
+{"timestamp": "2026-03-05T01:32:58", "action": "agent.config.read_denied_edit", "operator": "readonly-user", "details": {"read_only": true}}
+{"timestamp": "2026-03-05T01:32:58", "action": "dashboard.region_config.update", "operator": "qa-user", "details": {"keys": ["region_city_map", "metric_units", "region_coords", "region_colors"]}}
+{"timestamp": "2026-03-05T01:32:58", "action": "agent.permissions.update_user_roles", "operator": "qa-user", "details": {"user_id": "u_guest", "roles": ["analyst"]}}
+{"timestamp": "2026-03-05T01:32:58", "action": "agent.permissions.add_user", "operator": "qa-user", "details": {"user_id": "u_new", "roles": ["viewer"]}}
+{"timestamp": "2026-03-05T01:32:58", "action": "agent.config.update", "operator": "qa-user", "details": {"changed_fields": ["temperature"], "api_key_updated": false}}
+{"timestamp": "2026-03-05T01:48:38", "action": "agent.config.update", "operator": "qa-user", "details": {"changed_fields": ["temperature"], "api_key_updated": false}}
+{"timestamp": "2026-03-05T01:48:38", "action": "agent.config.read_denied_edit", "operator": "readonly-user", "details": {"read_only": true}}
+{"timestamp": "2026-03-05T01:48:38", "action": "dashboard.region_config.update", "operator": "qa-user", "details": {"keys": ["region_city_map", "metric_units", "region_coords", "region_colors"]}}
+{"timestamp": "2026-03-05T01:48:38", "action": "agent.permissions.update_user_roles", "operator": "qa-user", "details": {"user_id": "u_guest", "roles": ["analyst"]}}
+{"timestamp": "2026-03-05T01:48:38", "action": "agent.config.update", "operator": "qa-user", "details": {"changed_fields": ["temperature"], "api_key_updated": false}}
+{"timestamp": "2026-03-05T01:49:23", "action": "agent.config.update", "operator": "qa-user", "details": {"changed_fields": ["temperature"], "api_key_updated": false}}
+{"timestamp": "2026-03-05T01:49:23", "action": "agent.config.read_denied_edit", "operator": "readonly-user", "details": {"read_only": true}}
+{"timestamp": "2026-03-05T01:49:23", "action": "dashboard.region_config.update", "operator": "qa-user", "details": {"keys": ["region_city_map", "metric_units", "region_coords", "region_colors"]}}
+{"timestamp": "2026-03-05T01:49:23", "action": "agent.permissions.update_user_roles", "operator": "qa-user", "details": {"user_id": "u_guest", "roles": ["analyst"]}}
+{"timestamp": "2026-03-05T01:49:23", "action": "agent.permissions.add_user", "operator": "qa-user", "details": {"user_id": "u_new_1772646563228", "roles": ["viewer"]}}
+{"timestamp": "2026-03-05T01:49:23", "action": "agent.permissions.update_user", "operator": "qa-user", "details": {"user_id": "u_new_1772646563228", "enabled": false, "roles": null}}
+{"timestamp": "2026-03-05T01:49:23", "action": "agent.permissions.delete_user", "operator": "qa-user", "details": {"user_id": "u_new_1772646563228"}}
+{"timestamp": "2026-03-05T01:49:23", "action": "agent.config.update", "operator": "qa-user", "details": {"changed_fields": ["temperature"], "api_key_updated": false}}
+{"timestamp": "2026-03-05T14:48:15", "action": "agent.config.update_api_key", "operator": "admin", "details": {"api_key_updated": true}}
