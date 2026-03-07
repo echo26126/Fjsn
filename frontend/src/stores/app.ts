@@ -28,10 +28,10 @@ export const useAppStore = defineStore('app', () => {
     '厦漳销售区域',
   ]
   const timeMode = ref<'year' | 'month' | 'range'>('month')
-  const timePoint = ref(dayjs().format('YYYY-MM'))
+  const timePoint = ref('2025-12')
   const dateRange = ref<[string, string]>([
-    dayjs().startOf('month').format('YYYY-MM-DD'),
-    dayjs().format('YYYY-MM-DD')
+    '2025-12-01',
+    '2025-12-31'
   ])
   const dataScope = ref<'shipment' | 'outbound'>('outbound')
   const aiVisible = ref(false)
@@ -45,7 +45,7 @@ export const useAppStore = defineStore('app', () => {
   }>>([])
   const theme = ref<'light' | 'dark'>('light')
   const companyName = ref(localStorage.getItem('company_name') || '福建水泥')
-  const companyLogo = ref(localStorage.getItem('company_logo') || '')
+  const companyLogo = ref(localStorage.getItem('company_logo') || '/logo_fjcement.png')
 
   function initTheme() {
     document.documentElement.setAttribute('data-theme', theme.value)

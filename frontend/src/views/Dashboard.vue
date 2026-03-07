@@ -22,7 +22,7 @@
         <MapChart 
           :view-mode="viewMode" 
           :production-data="productionBaseData"
-          :sales-data="scaledSales"
+          :sales-data="salesRegionData"
           :selected-sales-region="selectedSalesRegion"
           :title="viewMode === 'production' ? '福建省生产分布' : '福建省销售分布'" 
           @point-click="handleMapPointClick"
@@ -58,25 +58,17 @@
           :inventory-rows="productionInventoryRows"
           :daily-inventory="dailyInventoryData"
           :sales-trend="salesTrendData"
+          :sales-items="currentSalesRows"
         />
       </div>
     </div>
 
-    <!-- 底部图表行 -->
-    <div class="bottom-charts">
-      <CategoryPie :data="viewMode === 'production' ? productionPie : salesPie" />
-      <PlanActualBar 
-        :plan-data="filteredProduction.map(b => b.plan)" 
-        :actual-data="filteredProduction.map(b => b.actual)"
-        :categories="filteredProduction.map(b => b.name.replace('基地', ''))"
-      />
-      <InventoryGauge :percent="inventoryPercent" />
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, markRaw, onMounted, watch } from 'vue'
+import dayjs from 'dayjs'
 import {
   BarChartOutlined,
   ShoppingCartOutlined,
@@ -90,9 +82,6 @@ import KpiStrip from '@/components/dashboard/KpiStrip.vue'
 import MapChart from '@/components/dashboard/MapChart.vue'
 import RankList from '@/components/dashboard/RankList.vue'
 import OperationTrendPanel from '@/components/dashboard/OperationTrendPanel.vue'
-import CategoryPie from '@/components/dashboard/CategoryPie.vue'
-import PlanActualBar from '@/components/dashboard/PlanActualBar.vue'
-import InventoryGauge from '@/components/dashboard/InventoryGauge.vue'
 
 const viewMode = ref<'production' | 'sales'>('production')
 const category = ref('all')
@@ -180,9 +169,19 @@ const DEFAULT_REGION_CITY_MAP: Record<string, string> = {
 
 const regionCoords = ref<Record<string, number[]>>(DEFAULT_REGION_COORDS)
 const regionColors = ref<Record<string, string>>(DEFAULT_REGION_COLORS)
+const BASE_COORDS: Record<string, number[]> = {
+  '安砂建福': [117.47, 26.72],
+  '永安建福': [117.37, 25.98],
+  '顺昌炼石': [117.81, 26.8],
+  '福州炼石': [119.31, 26.08],
+  '宁德建福': [119.53, 26.66],
+  '金银湖水泥': [117.99, 24.71],
+}
 
 const selectedSalesRegion = ref('all')
 const inventoryCategoryRows = ref<any[]>([])
+const productionReportRows = ref<any[]>([])
+const salesDetailRows = ref<any[]>([])
 const salesTrendData = ref<{ months: string[]; qty: number[]; avg_price: number[] }>({
   months: [],
   qty: [],
@@ -193,6 +192,50 @@ const dailyInventoryData = ref<{ days: string[]; clinker_inventory: number[]; ce
   clinker_inventory: [],
   cement_inventory: []
 })
+
+const resolvedMonthPoint = computed(() => {
+  if (appStore.timeMode === 'year') return `${appStore.timePoint}-12`
+  if (appStore.timeMode === 'range') return appStore.dateRange[1].slice(0, 7)
+  return dayjs(`${appStore.timePoint}-01`).format('YYYY-MM')
+})
+
+const currentSalesRows = computed(() => {
+  if (category.value === 'all') return salesDetailRows.value
+  const [model, pkg] = category.value.split('::')
+  return salesDetailRows.value.filter((row: any) => {
+    const modelPass = String(row.spec || '') === model
+    const pkgPass = String(row.package || '') === pkg
+    return modelPass && pkgPass
+  })
+})
+
+const rebuildSalesRegionData = () => {
+  const regionMap = new Map<string, { qty: number; amount: number }>()
+  currentSalesRows.value.forEach((row: any) => {
+    const region = String(row.region || '').trim()
+    if (!region) return
+    const hit = regionMap.get(region) || { qty: 0, amount: 0 }
+    hit.qty += Number(row.qty || 0)
+    hit.amount += Number(row.amount || 0)
+    regionMap.set(region, hit)
+  })
+  salesRegionData.value = Array.from(regionMap.entries()).map(([region, val]) => {
+    const qty = +val.qty.toFixed(2)
+    const amount = +val.amount.toFixed(2)
+    const avgPrice = qty > 0 ? Math.round((amount * 10000) / (qty * 10000)) : 0
+    return {
+      name: region,
+      displayName: region,
+      short: region.replace('区域', ''),
+      city: regionCityMap.value[region] || region.replace('区域', '市'),
+      coord: regionCoords.value[region] || [118.0, 26.0],
+      value: qty,
+      avgPrice,
+      amount,
+      color: regionColors.value[region] || '#3498DB'
+    }
+  })
+}
 
 const fetchData = async () => {
   try {
@@ -212,48 +255,97 @@ const fetchData = async () => {
       regionColors.value = { ...DEFAULT_REGION_COLORS, ...configRes.region_colors }
     }
 
-    // 1. Fetch KPI
-    const kpiRes = await dashboardApi.getKpi()
-    kpiData.value = kpiRes
+    const productionRes = await queryApi.getProductionReport({
+      period: 'month',
+      point: resolvedMonthPoint.value
+    })
+    productionReportRows.value = productionRes?.items || []
 
-    // 2. Fetch Production
-    const prodRes = await dashboardApi.getProduction()
-    if (prodRes && prodRes.bases) {
-      productionBaseData.value = prodRes.bases.map((b: any) => ({
-        name: b.name,
-        coord: [b.lng, b.lat],
-        plan: b.capacity,
-        capacity: b.capacity,
-        actual: b.production,
-        utilization: b.utilization,
-        inventory: b.inventory || 0
-      }))
-    }
-
-    // 3. Fetch Sales
-    const salesRes = await dashboardApi.getSales()
-    if (salesRes && salesRes.regions) {
-      salesRegionData.value = salesRes.regions.map((r: any) => ({
-        name: r.name,
-        displayName: r.name,
-        short: r.name.replace('区域', ''),
-        city: regionCityMap.value[r.name] || r.name.replace('区域', '市'),
-        coord: regionCoords.value[r.name] || [118.0, 26.0],
-        value: r.qty,
-        avgPrice: r.avg_price || 0,
-        amount: r.amount || 0,
-        color: regionColors.value[r.name] || '#3498DB'
-      }))
-    }
-
-    const inventoryRes = await queryApi.getInventory()
+    const inventoryRes = await queryApi.getInventory({
+      period: appStore.timeMode,
+      point: resolvedMonthPoint.value,
+      category: viewMode.value === 'production' && category.value !== 'all' ? category.value : undefined
+    })
     if (inventoryRes?.items) {
       inventoryCategoryRows.value = inventoryRes.items
     }
 
-    const salesTrendRes = await queryApi.getSales()
-    if (salesTrendRes?.price_trend) {
-      salesTrendData.value = salesTrendRes.price_trend
+    const salesRes = await queryApi.getSales({
+      period: appStore.timeMode,
+      point: resolvedMonthPoint.value
+    })
+    salesDetailRows.value = salesRes?.items || []
+    salesTrendData.value = salesRes?.price_trend || { months: [], qty: [], avg_price: [] }
+    rebuildSalesRegionData()
+
+    const inventoryByBase = new Map<string, { inventory: number; capacity: number }>()
+    inventoryCategoryRows.value.forEach((row: any) => {
+      const base = String(row.base || '')
+      if (!base) return
+      const hit = inventoryByBase.get(base) || { inventory: 0, capacity: 0 }
+      hit.inventory += Number(row.end_qty || 0)
+      hit.capacity += Number(row.capacity || 0)
+      inventoryByBase.set(base, hit)
+    })
+    const productionByBase = new Map<string, { plan: number; actual: number }>()
+    productionReportRows.value.forEach((row: any) => {
+      const base = String(row.base || '')
+      if (!base) return
+      const hit = productionByBase.get(base) || { plan: 0, actual: 0 }
+      hit.plan += Number(row.plan_qty || 0)
+      hit.actual += Number(row.month_prod || row.actual_qty || 0)
+      productionByBase.set(base, hit)
+    })
+    const baseNames = Array.from(new Set([
+      ...Array.from(productionByBase.keys()),
+      ...Array.from(inventoryByBase.keys()),
+    ]))
+    productionBaseData.value = baseNames.map(base => {
+      const prod = productionByBase.get(base) || { plan: 0, actual: 0 }
+      const inv = inventoryByBase.get(base) || { inventory: 0, capacity: 0 }
+      return {
+        name: base,
+        coord: BASE_COORDS[base] || [118.0, 26.0],
+        plan: +prod.plan.toFixed(2),
+        capacity: +inv.capacity.toFixed(2),
+        actual: +prod.actual.toFixed(2),
+        utilization: inv.capacity > 0 ? +((prod.actual / inv.capacity) * 100).toFixed(1) : 0,
+        inventory: +inv.inventory.toFixed(2)
+      }
+    })
+
+    const productionValue = productionBaseData.value.reduce((sum, row) => sum + row.actual, 0)
+    const productionPlan = productionBaseData.value.reduce((sum, row) => sum + row.plan, 0)
+    const salesValue = salesDetailRows.value.reduce((sum, row: any) => sum + Number(row.qty || 0), 0)
+    const inventoryValue = inventoryCategoryRows.value.reduce((sum, row: any) => sum + Number(row.end_qty || 0), 0)
+    const inventoryCap = inventoryCategoryRows.value.reduce((sum, row: any) => sum + Number(row.capacity || 0), 0)
+    const productionSalesRatio = salesValue > 0 ? Math.min(1, productionValue / salesValue) : 0
+    const inventoryHealth = inventoryCap > 0 ? Math.max(0, 1 - Math.abs((inventoryValue / inventoryCap) - 0.62)) : 0
+    const balanceScore = +(0.55 * productionSalesRatio + 0.45 * inventoryHealth).toFixed(2)
+    const balanceLevel = balanceScore >= 0.9 ? '良好' : (balanceScore >= 0.8 ? '关注' : '偏低')
+    kpiData.value = {
+      production: {
+        value: +productionValue.toFixed(2),
+        unit: '万吨',
+        change: 0,
+        percent: productionPlan > 0 ? Math.min(100, Math.round((productionValue / productionPlan) * 100)) : 0,
+      },
+      sales: {
+        value: +salesValue.toFixed(2),
+        unit: '万吨',
+        change: 0,
+        percent: productionValue > 0 ? Math.min(100, Math.round((salesValue / productionValue) * 100)) : 0,
+      },
+      inventory: {
+        value: +inventoryValue.toFixed(2),
+        unit: '万吨',
+        change: 0,
+        percent: inventoryCap > 0 ? Math.min(100, Math.round((inventoryValue / inventoryCap) * 100)) : 0,
+      },
+      balance_index: {
+        value: balanceScore,
+        level: balanceLevel,
+      }
     }
     await fetchDailyInventoryData()
   } catch (err) {
@@ -286,19 +378,23 @@ onMounted(() => {
 
 const categoryOptions = computed(() => {
   if (viewMode.value === 'sales') {
+    const keys = Array.from(new Set(
+      salesDetailRows.value
+        .map((row: any) => `${String(row.spec || '').trim()}::${String(row.package || '').trim()}`)
+        .filter((item: string) => item.split('::')[0])
+    ))
     return [
-      { value: 'all', label: '全部分类' },
-      { value: 'po425-bulk', label: 'P.O 42.5 散装' },
-      { value: 'po425-bag', label: 'P.O 42.5 袋装' },
-      { value: 'po525-bulk', label: 'P.O 52.5 散装' },
-      { value: 'po525-bag', label: 'P.O 52.5 袋装' },
+      { value: 'all', label: '全部型号规格' },
+      ...keys.map(item => {
+        const [model, pkg] = item.split('::')
+        return { value: item, label: `${model}${pkg ? ` ${pkg}` : ''}` }
+      })
     ]
   }
   return [
     { value: 'all', label: '全部品类' },
     { value: 'cement', label: '水泥' },
     { value: 'clinker', label: '熟料' },
-    { value: 'aggregate', label: '骨料' },
   ]
 })
 
@@ -329,24 +425,9 @@ const productionInventoryRows = computed(() => {
   }))
 })
 
-const salesScale = computed(() => {
-  if (appStore.selectedBase === 'all') return 1
-  const base = productionBaseData.value.find(b => b.name === appStore.selectedBase)
-  const total = productionBaseData.value.reduce((sum, b) => sum + b.actual, 0)
-  if (!base || total === 0) return 1
-  return +(base.actual / total).toFixed(3)
-})
-
-const scaledSales = computed(() =>
-  salesRegionData.value.map(r => ({
-    ...r,
-    value: +(r.value * salesScale.value).toFixed(2)
-  }))
-)
-
 const filteredSales = computed(() => {
-  if (selectedSalesRegion.value === 'all') return scaledSales.value
-  return scaledSales.value.filter(r => r.displayName === selectedSalesRegion.value)
+  if (selectedSalesRegion.value === 'all') return salesRegionData.value
+  return salesRegionData.value.filter(r => r.displayName === selectedSalesRegion.value)
 })
 
 const compactSalesName = (name: string) =>
@@ -376,10 +457,21 @@ function resetMapSelection() {
 
 watch(() => viewMode.value, () => {
   selectedSalesRegion.value = 'all'
+  category.value = 'all'
+  rebuildSalesRegionData()
 })
 
 watch(() => appStore.selectedBase, () => {
   fetchDailyInventoryData()
+})
+
+watch(() => category.value, () => {
+  if (viewMode.value === 'sales') {
+    rebuildSalesRegionData()
+    selectedSalesRegion.value = 'all'
+    return
+  }
+  fetchData()
 })
 
 watch([() => appStore.queryNonce, () => appStore.timePoint, () => appStore.timeMode, () => appStore.dateRange], () => {
@@ -397,7 +489,7 @@ const detailPanel = computed(() => {
     if (!base) {
       return { title: '基地详情', metrics: [] as Array<{ label: string; value: string; unit: string }> }
     }
-    const salesAmount = scaledSales.value.reduce((sum, item) => sum + item.value, 0)
+    const salesAmount = salesRegionData.value.reduce((sum, item) => sum + item.value, 0)
     return {
       title: `${base.name}经营详情`,
       metrics: [
@@ -482,19 +574,6 @@ const kpiList = computed(() => {
 
 const appTheme = computed(() => appStore.theme)
 
-const productionPie = computed(() => [
-  { value: kpiData.value?.production?.value || 0, name: '水泥', itemStyle: { color: appTheme.value === 'dark' ? '#00D4FF' : '#2F8CFF' } },
-  { value: Math.max(0, (kpiData.value?.inventory?.value || 0) * 0.45), name: '熟料', itemStyle: { color: '#2ECFD1' } },
-  { value: Math.max(0, (kpiData.value?.production?.value || 0) * 0.15), name: '骨料', itemStyle: { color: '#FFB84D' } },
-])
-
-const salesPie = computed(() => [
-  { value: 22.4, name: 'P.O 42.5 散装', itemStyle: { color: appTheme.value === 'dark' ? '#00D4FF' : '#2F8CFF' } },
-  { value: 16.1, name: 'P.O 42.5 袋装', itemStyle: { color: '#2ECFD1' } },
-  { value: 14.5, name: 'P.O 52.5 散装', itemStyle: { color: '#FFB84D' } },
-  { value: 9.1, name: 'P.O 52.5 袋装', itemStyle: { color: '#8E7CFF' } },
-])
-
 const inventoryPercent = computed(() => {
   return inventoryCapacity.value === 0 ? 0 : Math.min(100, Math.round((inventoryTotal.value / inventoryCapacity.value) * 100))
 })
@@ -573,13 +652,7 @@ const inventoryPercent = computed(() => {
   color: var(--text-primary);
 }
 
-.bottom-charts {
-  display: flex;
-  gap: 16px;
-}
-
 @media (max-width: 1400px) {
   .dashboard-body { flex-direction: column; }
-  .bottom-charts { flex-direction: column; }
 }
 </style>

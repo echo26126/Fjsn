@@ -47,16 +47,16 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '销售预测', icon: 'line-chart', requiresAuth: true }
       },
       {
-        path: 'balance',
-        name: 'Balance',
-        component: () => import('@/views/BalanceOptimize.vue'),
-        meta: { title: '产销平衡', icon: 'aim', requiresAuth: true }
+        path: 'decision-flow',
+        name: 'DecisionFlowCenter',
+        component: () => import('@/views/DecisionFlowCenter.vue'),
+        meta: { title: '产销舆情中心', icon: 'deployment-unit', requiresAuth: true }
       },
       {
-        path: 'optimizer',
-        name: 'Optimizer',
-        component: () => import('@/views/BalanceOptimizeV2.vue'),
-        meta: { title: '运筹优化引擎', icon: 'experiment', requiresAuth: true }
+        path: 'decision-simulation',
+        name: 'DecisionSimulation',
+        component: () => import('@/views/DecisionSimulation.vue'),
+        meta: { title: '模拟建议', icon: 'fund-projection-screen', requiresAuth: true }
       },
       {
         path: 'data',

@@ -68,18 +68,27 @@ const formState = reactive({
 async function handleLogin() {
   loading.value = true
   try {
+    await authApi.health()
     const res = await authApi.login(formState.username, formState.password)
     userStore.setToken(res.access_token)
-    
-    // Get user info
     const user = await authApi.getMe()
     userStore.setUser(user)
-    
     message.success('登录成功')
     router.push('/')
   } catch (error: any) {
-    const msg = error.response?.data?.detail || '登录失败'
-    message.error(msg)
+    const status = Number(error?.response?.status || 0)
+    if (!status) {
+      message.error('后端服务不可达，请先启动后端服务（8000端口）')
+    } else if (status === 401) {
+      message.error('账号或密码错误，请使用 admin / admin-password 重试')
+    } else if (status === 403) {
+      message.error('当前账号无登录权限，请联系管理员')
+    } else if (status >= 500) {
+      message.error('后端服务异常，请稍后重试')
+    } else {
+      const msg = error.response?.data?.detail || '登录失败'
+      message.error(msg)
+    }
   } finally {
     loading.value = false
   }

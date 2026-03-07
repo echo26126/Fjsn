@@ -19,6 +19,10 @@ BASE_PLAN_TON = {
 }
 
 
+def _norm_text(value: str) -> str:
+    return str(value or "").replace("\n", "").replace(" ", "").strip()
+
+
 def _to_float(value) -> float:
     text = str(value or "").strip().replace(",", "")
     if not text:
@@ -204,11 +208,78 @@ class DecemberReportService:
             equipment_summary_result[day] = day_equipment_summary
             equipment_detail_result[day] = day_equipment_details
             stop_reason_result[day] = day_stop_reasons
+        inventory_from_sheet = self._parse_inventory_sheet()
+        if inventory_from_sheet:
+            inventory_result = inventory_from_sheet
         return {"inventory": inventory_result, "production": production_result, "equipment_summary": equipment_summary_result, "equipment_detail": equipment_detail_result, "stop_reason": stop_reason_result}
 
+    def _parse_inventory_sheet(self) -> Dict[str, Any]:
+        normalized_base_map = {_norm_text(name): name for name in BASE_NAMES}
+        clinker_code_map = {
+            "M22": "安砂建福",
+            "M32": "永安建福",
+            "M42": "金银湖水泥",
+            "M52": "顺昌炼石",
+            "M62": "福州炼石",
+            "M69": "宁德建福",
+        }
+        cement_code_map = {
+            "M21": "安砂建福",
+            "M31": "永安建福",
+            "M41": "金银湖水泥",
+            "M51": "顺昌炼石",
+            "M61": "福州炼石",
+            "M68": "宁德建福",
+        }
+        result = {
+            base: {"days": [f"12月{i}日" for i in range(1, 32)], "clinker_inventory": [0.0 for _ in range(31)], "cement_inventory": [0.0 for _ in range(31)]}
+            for base in BASE_NAMES
+        }
+        if not self.report_path.exists():
+            return result
+        try:
+            df = pd.read_excel(self.report_path, sheet_name="库存", header=None, dtype=str).fillna("")
+        except Exception:
+            return result
+        for _, row in df.iterrows():
+            row_values = row.astype(str).tolist()
+            code = _norm_text(row_values[1] if len(row_values) > 1 else "")
+            if not code:
+                continue
+            category = ""
+            base_name = ""
+            if code in clinker_code_map:
+                category = "clinker_inventory"
+                base_name = clinker_code_map[code]
+            elif code in cement_code_map:
+                category = "cement_inventory"
+                base_name = cement_code_map[code]
+            if not category or not base_name:
+                continue
+            base_key = normalized_base_map.get(_norm_text(base_name))
+            if not base_key:
+                continue
+            series = []
+            for col in range(4, 35):
+                value = _to_float(row_values[col] if len(row_values) > col else 0)
+                series.append(round(value * 10000, 2))
+            report_text = str(row_values[36]).strip() if len(row_values) > 36 else ""
+            adjust_text = str(row_values[35]).strip() if len(row_values) > 35 else ""
+            if report_text:
+                series[-1] = round(_to_float(report_text) * 10000, 2)
+            elif adjust_text:
+                series[-1] = round(_to_float(adjust_text) * 10000, 2)
+            if len(series) == 31:
+                result[base_key][category] = series
+        return result
+
     def get_base_daily_inventory(self, base: str):
-        parsed = self._parse_daily_data()["inventory"]
-        return parsed.get(base, {"days": [], "clinker_inventory": [], "cement_inventory": []})
+        parsed = self._parse_inventory_sheet()
+        if base in parsed:
+            return parsed.get(base, {"days": [], "clinker_inventory": [], "cement_inventory": []})
+        normalized = _norm_text(base)
+        normalized_map = {_norm_text(k): v for k, v in parsed.items()}
+        return normalized_map.get(normalized, {"days": [], "clinker_inventory": [], "cement_inventory": []})
 
     def _apply_category(self, rows: List[Dict[str, float]], category: str) -> List[Dict[str, float]]:
         if category != "clinker":
@@ -329,9 +400,12 @@ class DecemberReportService:
             day = 31
             if len(point) >= 10 and point[8:10].isdigit():
                 day = int(point[8:10])
-            if period == "day":
+            if period in ("day", "month"):
                 rows = self.get_daily_production_rows(day=max(1, min(day, 31)), base=base, category=category)
                 if rows:
+                    if period == "month":
+                        for row in rows:
+                            row["period"] = "2025-12"
                     return rows
         return self._build_synthetic_rows(period=period, point=point, base=base, category=category)
 

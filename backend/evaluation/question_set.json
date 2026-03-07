@@ -1,0 +1,58 @@
+[
+  {
+    "id": "Q001",
+    "question": "12月份安砂的熟料产量",
+    "expected_table": "fact_production",
+    "expected_keywords": ["安砂建福", "熟料", "产量"],
+    "min_rows": 1
+  },
+  {
+    "id": "Q002",
+    "question": "12月份安砂熟料库存",
+    "expected_table": "fact_inventory",
+    "expected_keywords": ["安砂建福", "熟料", "库存"],
+    "min_rows": 1
+  },
+  {
+    "id": "Q003",
+    "question": "12月份福州订单情况",
+    "expected_table": "fact_orders",
+    "expected_keywords": ["福州炼石", "订单", "出库"],
+    "min_rows": 1
+  },
+  {
+    "id": "Q004",
+    "question": "12月份宁德建福销售情况",
+    "expected_table": "fact_sales",
+    "expected_keywords": ["宁德建福", "销量", "均价"],
+    "min_rows": 1
+  },
+  {
+    "id": "Q005",
+    "question": "12月份各基地熟料库存排行",
+    "expected_table": "fact_inventory",
+    "expected_keywords": ["熟料", "库存"],
+    "min_rows": 3
+  },
+  {
+    "id": "Q006",
+    "question": "12月份各基地产量排行",
+    "expected_table": "fact_production",
+    "expected_keywords": ["产量", "计划"],
+    "min_rows": 3
+  },
+  {
+    "id": "Q007",
+    "question": "12月份各基地销量排行",
+    "expected_table": "fact_sales",
+    "expected_keywords": ["销量", "均价"],
+    "min_rows": 3
+  },
+  {
+    "id": "Q008",
+    "question": "12月份安砂订单与出库对比",
+    "expected_table": "fact_orders",
+    "expected_keywords": ["安砂建福", "订单", "出库"],
+    "min_rows": 1
+  }
+]

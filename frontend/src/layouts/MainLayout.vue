@@ -10,14 +10,18 @@
       :theme="appStore.theme === 'dark' ? 'dark' : 'light'"
     >
       <div class="logo" @click="$router.push('/')">
-        <img v-if="appStore.companyLogo" :src="appStore.companyLogo" class="logo-image" alt="logo" />
-        <svg v-else viewBox="0 0 24 24" width="28" height="28" :fill="appStore.theme === 'dark' ? '#3dd9a8' : '#1b6b5a'">
-          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-        </svg>
-        <div v-show="!appStore.collapsed" class="logo-text-wrap">
-          <span class="logo-text" :style="{ color: 'var(--text-primary)' }">{{ appStore.companyName }}</span>
-          <span class="logo-subtext">产销平衡智能体</span>
-        </div>
+        <template v-if="appStore.companyLogo">
+          <img :src="appStore.companyLogo" :class="appStore.collapsed ? 'logo-image-collapsed' : 'logo-image-full'" alt="logo" />
+        </template>
+        <template v-else>
+          <svg viewBox="0 0 24 24" width="28" height="28" :fill="appStore.theme === 'dark' ? '#3dd9a8' : '#1b6b5a'">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+          <div v-show="!appStore.collapsed" class="logo-text-wrap">
+            <span class="logo-text" :style="{ color: 'var(--text-primary)' }">{{ appStore.companyName }}</span>
+            <span class="logo-subtext">产销平衡智能体</span>
+          </div>
+        </template>
       </div>
 
       <a-menu
@@ -31,28 +35,29 @@
           <span>经营总览</span>
         </a-menu-item>
 
-        <a-sub-menu key="prod-stock">
-          <template #icon><BarChartOutlined /></template>
-          <template #title>生产分析</template>
-          <a-menu-item key="/production">生产</a-menu-item>
-          <a-menu-item key="/inventory">库存</a-menu-item>
-        </a-sub-menu>
-
-        <a-sub-menu key="sales-mgmt">
-          <template #icon><ShoppingOutlined /></template>
-          <template #title>销售分析</template>
-          <a-menu-item key="/sales">销售</a-menu-item>
-          <a-menu-item key="/sales-forecast">预测</a-menu-item>
-        </a-sub-menu>
-
-        <a-menu-item key="/balance">
-          <template #icon><AimOutlined /></template>
-          <span>产销平衡智能体</span>
+        <a-menu-item key="/decision-flow">
+          <template #icon><DeploymentUnitOutlined /></template>
+          <span>产销舆情</span>
         </a-menu-item>
 
-        <a-menu-item key="/optimizer">
+        <a-menu-item key="/sales">
+          <template #icon><ShoppingOutlined /></template>
+          <span>销售分析</span>
+        </a-menu-item>
+
+        <a-menu-item key="/inventory">
+          <template #icon><DatabaseOutlined /></template>
+          <span>库存概览</span>
+        </a-menu-item>
+
+        <a-menu-item key="/production">
+          <template #icon><BarChartOutlined /></template>
+          <span>生产监控</span>
+        </a-menu-item>
+
+        <a-menu-item key="/decision-simulation">
           <template #icon><ExperimentOutlined /></template>
-          <span>运筹优化引擎</span>
+          <span>模拟建议</span>
         </a-menu-item>
 
         <a-menu-item key="/data">
@@ -109,47 +114,6 @@
             size="small"
             style="width: 120px"
           />
-          <span v-if="showBaseFilter" class="query-label">生产基地</span>
-          <a-select
-            v-model:value="appStore.selectedBase"
-            size="small"
-            style="width: 120px"
-            v-if="showBaseFilter"
-          >
-            <a-select-option value="all">全部基地</a-select-option>
-            <a-select-option v-for="b in appStore.baseOptions" :key="b" :value="b">{{ b }}</a-select-option>
-          </a-select>
-          <span v-if="showRegionFilter" class="query-label">销售区域</span>
-          <a-select
-            v-if="showRegionFilter"
-            v-model:value="appStore.selectedRegion"
-            size="small"
-            style="width: 130px"
-          >
-            <a-select-option value="all">全部区域</a-select-option>
-            <a-select-option v-for="r in appStore.regionOptions" :key="r" :value="r">{{ r }}</a-select-option>
-          </a-select>
-          <span v-if="showCategoryFilter" class="query-label">品类</span>
-          <a-select
-            v-if="showCategoryFilter"
-            v-model:value="appStore.selectedCategory"
-            size="small"
-            style="width: 100px"
-          >
-            <a-select-option value="all">全部品类</a-select-option>
-            <a-select-option value="cement">水泥</a-select-option>
-            <a-select-option value="clinker">熟料</a-select-option>
-          </a-select>
-          <a-button v-if="isQueryPage" size="small" type="primary" @click="appStore.triggerQuery">查询</a-button>
-          <a-select
-            v-model:value="appStore.dataScope"
-            size="small"
-            style="width: 100px"
-          >
-            <a-select-option value="outbound">出库口径</a-select-option>
-            <a-select-option value="shipment">发货口径</a-select-option>
-          </a-select>
-          
           <button class="theme-toggle" :class="{ dark: appStore.theme === 'dark' }" @click="appStore.toggleTheme">
             <svg v-if="appStore.theme === 'dark'" viewBox="0 0 24 24" width="16" height="16">
               <path fill="currentColor" d="M21 14.5A8.5 8.5 0 1 1 9.5 3a7 7 0 1 0 11.5 11.5z"/>
@@ -159,10 +123,6 @@
               <path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
             </svg>
           </button>
-          
-          <a-badge :count="3" style="cursor: pointer">
-            <BellOutlined :style="{ fontSize: '18px', color: 'var(--text-primary)' }" />
-          </a-badge>
           
           <a-dropdown v-if="userStore.isLoggedIn">
             <span class="user-info" style="cursor: pointer; display: flex; alignItems: center; gap: 4px">
@@ -196,12 +156,14 @@ import {
   DashboardOutlined,
   BarChartOutlined,
   ShoppingOutlined,
-  AimOutlined,
   CloudUploadOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  BellOutlined,
   ExperimentOutlined,
+  DatabaseOutlined,
+  LineChartOutlined,
+  DeploymentUnitOutlined,
+  FundProjectionScreenOutlined,
 } from '@ant-design/icons-vue'
 import { useAppStore } from '@/stores/app'
 import { useUserStore } from '@/stores/user'
@@ -233,9 +195,6 @@ function handleLogout() {
 const selectedKeys = ref<string[]>([route.path])
 const currentTitle = computed(() => (route.meta?.title as string) || '')
 const isQueryPage = computed(() => ['/production', '/inventory', '/sales'].includes(route.path))
-const showBaseFilter = computed(() => ['/production', '/inventory'].includes(route.path))
-const showRegionFilter = computed(() => route.path === '/sales')
-const showCategoryFilter = computed(() => ['/production', '/inventory', '/sales'].includes(route.path))
 
 function getQueryMemoryKey(path: string) {
   return `query_memory_${path}`
@@ -372,11 +331,17 @@ function onMenuClick({ key }: { key: string }) {
   flex-direction: column;
 }
 
-.logo-image {
-  width: 28px;
-  height: 28px;
-  border-radius: 4px;
-  object-fit: cover;
+.logo-image-full {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  object-fit: contain;
+}
+
+.logo-image-collapsed {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
 }
 
 .header {
@@ -458,6 +423,56 @@ function onMenuClick({ key }: { key: string }) {
   background: var(--content-bg);
   min-height: calc(100vh - var(--header-height));
   overflow-y: auto;
+}
+
+/* 优化后的菜单样式 */
+.sidebar :deep(.ant-menu) {
+  background: transparent;
+  padding: 8px;
+  border-inline-end: none !important;
+}
+
+.sidebar :deep(.ant-menu-item) {
+  margin: 4px 0;
+  border-radius: 8px;
+  height: 44px;
+  line-height: 44px;
+  font-size: 15px; /* 字号加大 */
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+}
+
+.sidebar :deep(.ant-menu-item:hover) {
+  color: var(--primary-color);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.sidebar :deep(.ant-menu-item-selected) {
+  background: var(--primary-color-light) !important;
+  color: var(--primary-color) !important;
+  font-weight: 500;
+}
+
+/* 适配暗色模式 */
+.sidebar[theme='dark'] :deep(.ant-menu-item:hover) {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.sidebar[theme='dark'] :deep(.ant-menu-item-selected) {
+  background: var(--primary-color) !important;
+  color: #fff !important;
+}
+
+/* 调整图标大小与间距 */
+.sidebar :deep(.ant-menu-item .anticon) {
+  font-size: 18px;
+  margin-right: 12px;
+}
+
+/* 折叠状态适配 */
+.sidebar.ant-layout-sider-collapsed :deep(.ant-menu-item) {
+  padding: 0 calc(50% - 18px / 2);
 }
 
 </style>

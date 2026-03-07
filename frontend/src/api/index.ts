@@ -31,6 +31,7 @@ api.interceptors.response.use(
 export default api
 
 export const authApi = {
+  health: () => api.get('/health'),
   login: (username: string, password: string) => api.post('/auth/login', { username, password }),
   getMe: () => api.get('/auth/me'),
   getUsers: (params?: any) => api.get('/auth/users', { params }),
@@ -58,10 +59,9 @@ export const queryApi = {
   getInventoryDaily: (params?: any) => api.get('/query/inventory-daily', { params }),
 }
 
-export const balanceApi = {
-  getAlerts: (params?: any) => api.get('/balance/alerts', { params }),
-  getSuggestions: (params?: any) => api.get('/balance/suggestions', { params }),
-  runOptimize: (data?: any) => api.post('/balance/optimize', data),
+export const optimizerApi = {
+  getParams: (params?: any) => api.get('/optimizer/params', { params }),
+  runWhatIf: (data: any) => api.post('/optimizer/whatif', data),
 }
 
 export const dataApi = {
@@ -77,7 +77,7 @@ export const dataApi = {
 
 export const agentApi = {
   chat: (question: string, context?: any) => api.post('/agent/chat', { question, context }),
-  chatStream: (question: string, context?: any) => {
+  chatStream: (question: string, context?: any, signal?: AbortSignal) => {
     const token = localStorage.getItem('access_token')
     return fetch('/api/agent/chat-stream', {
       method: 'POST',
@@ -86,10 +86,30 @@ export const agentApi = {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ question, context }),
+      signal,
     })
   },
   getConfig: () => api.get('/agent/config'),
   saveConfig: (data: any) => api.put('/agent/config', data),
   updateApiKey: (apiKey: string) => api.patch('/agent/config/api-key', { api_key: apiKey }),
   getAuditLogs: (limit = 30) => api.get('/agent/config/audit', { params: { limit } }),
+}
+
+export const decisionFlowApi = {
+  listAlerts: (params?: any) => api.get('/decision-flow/alerts', { params }),
+  getActionConfig: () => api.get('/decision-flow/action-config'),
+  saveActionConfig: (data: any) => api.put('/decision-flow/action-config', data),
+  createAlert: (data: any) => api.post('/decision-flow/alerts', data),
+  regenerateSimulatedAlerts: () => api.post('/decision-flow/alerts/regenerate-simulated'),
+  updateAlert: (alertId: string, data: any) => api.patch(`/decision-flow/alerts/${alertId}`, data),
+  listAlertFollowups: (alertId: string) => api.get(`/decision-flow/alerts/${alertId}/followups`),
+  createAlertFollowup: (alertId: string, data: any) => api.post(`/decision-flow/alerts/${alertId}/followups`, data),
+  createModelSuggestion: (alertId: string) => api.post(`/decision-flow/alerts/${alertId}/model-suggest`),
+  getAiAnalysis: (alertId: string) => api.get(`/decision-flow/alerts/${alertId}/ai-analysis`),
+  listRecommendations: (params?: any) => api.get('/decision-flow/recommendations', { params }),
+  createRecommendation: (data: any) => api.post('/decision-flow/recommendations', data),
+  decideRecommendation: (recommendationId: string, data: any) => api.patch(`/decision-flow/recommendations/${recommendationId}/decision`, data),
+  listExecutions: (params?: any) => api.get('/decision-flow/executions', { params }),
+  createExecution: (data: any) => api.post('/decision-flow/executions', data),
+  updateExecution: (executionId: string, data: any) => api.patch(`/decision-flow/executions/${executionId}`, data),
 }

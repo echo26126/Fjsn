@@ -25,3 +25,5 @@
 {"timestamp": "2026-03-05T01:49:23", "action": "agent.permissions.delete_user", "operator": "qa-user", "details": {"user_id": "u_new_1772646563228"}}
 {"timestamp": "2026-03-05T01:49:23", "action": "agent.config.update", "operator": "qa-user", "details": {"changed_fields": ["temperature"], "api_key_updated": false}}
 {"timestamp": "2026-03-05T14:48:15", "action": "agent.config.update_api_key", "operator": "admin", "details": {"api_key_updated": true}}
+{"timestamp": "2026-03-06T22:21:12", "action": "agent.config.update", "operator": "admin", "details": {"changed_fields": ["sql_prompt"], "api_key_updated": false}}
+{"timestamp": "2026-03-06T22:22:46", "action": "agent.config.update", "operator": "admin", "details": {"changed_fields": ["model"], "api_key_updated": false}}

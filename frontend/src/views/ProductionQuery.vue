@@ -7,6 +7,23 @@
       </a-space>
     </div>
 
+    <div class="query-switch-row">
+      <a-space size="small" wrap>
+        <a-tag color="blue">{{ layerPeriodLabel }}</a-tag>
+        <span class="switch-label">基地</span>
+        <a-select v-model:value="selectedBase" size="small" style="width: 150px">
+          <a-select-option value="all">全部基地</a-select-option>
+          <a-select-option v-for="item in appStore.baseOptions" :key="item" :value="item">{{ item }}</a-select-option>
+        </a-select>
+        <span class="switch-label">品类</span>
+        <a-radio-group v-model:value="selectedCategory" size="small" button-style="solid">
+          <a-radio-button value="all">全部</a-radio-button>
+          <a-radio-button value="cement">水泥</a-radio-button>
+          <a-radio-button value="clinker">熟料</a-radio-button>
+        </a-radio-group>
+      </a-space>
+    </div>
+
     <div class="card-grid card-grid-2" style="margin-bottom: 16px">
       <a-card :bordered="false" title="主要设备运行情况一览">
         <div style="display: flex; justify-content: space-between; margin-bottom: 8px">
@@ -21,14 +38,6 @@
           </a-radio-group>
         </div>
         <div ref="equipmentRef" style="height: 220px"></div>
-        <div class="equipment-summary-strip">
-          <div v-for="item in equipmentSummaryCards" :key="item.base" class="equipment-summary-item">
-            <span>{{ item.base }}</span>
-            <span>设备 {{ item.deviceCount }}</span>
-            <span>停窑设备 {{ item.stopDeviceCount }}</span>
-            <span>停窑小时 {{ item.stopHours }}</span>
-          </div>
-        </div>
         <a-table
           :columns="equipmentColumns"
           :data-source="equipmentDetailTableData"
@@ -104,17 +113,22 @@ const baseCapacityMap = ref<Record<string, number>>({})
 const overviewMode = ref<'month' | 'year'>('month')
 const equipmentMetric = ref<'day' | 'month' | 'year'>('month')
 const equipmentViewMode = ref<'device' | 'base'>('base')
+const layerPeriodLabel = computed(() => {
+  if (appStore.timeMode === 'year') return `${appStore.timePoint}年`
+  if (appStore.timeMode === 'range') {
+    const [start, end] = appStore.dateRange
+    return `${dayjs(start).format('YYYY年M月D日')} - ${dayjs(end).format('M月D日')}`
+  }
+  return `${dayjs(`${appStore.timePoint}-01`).format('YYYY年M月')}`
+})
 
 const queryPeriod = computed(() => appStore.timeMode === 'year' ? 'month' : 'day')
 
 const queryPoint = computed(() => {
-  if (appStore.timeMode === 'year') {
-    return `${appStore.timePoint}-12`
-  }
-  if (appStore.timeMode === 'range') {
-    return appStore.dateRange[1]
-  }
-  return dayjs(`${appStore.timePoint}-01`).endOf('month').format('YYYY-MM-DD')
+  if (appStore.timeMode === 'year') return '2025-12-31'
+  if (appStore.timeMode === 'range') return '2025-12-31'
+  const monthText = dayjs(`${appStore.timePoint}-01`).format('YYYY-MM')
+  return monthText === '2025-12' ? '2025-12-31' : '2025-12-31'
 })
 
 const equipmentQueryPoint = computed(() => {
@@ -165,6 +179,8 @@ const fetchBottomData = async () => {
     })
     productionList.value = detailRes?.items || []
     const inventoryRes = await queryApi.getInventory({
+      period: appStore.timeMode,
+      point: queryPoint.value,
       base: selectedBase.value === 'all' ? undefined : selectedBase.value,
       category: selectedCategory.value === 'all' ? undefined : selectedCategory.value,
     })
@@ -299,19 +315,10 @@ const equipmentColumns = computed(() => {
   const stopTitle = isDay ? '日停窑(h)' : (isMonth ? '月停窑(h)' : '年停窑(h)')
   return [
     { title: '基地', dataIndex: 'base', width: 92 },
-    { title: '设备（日报）', dataIndex: 'device', width: 130 },
+    { title: '设备', dataIndex: 'device', width: 130 },
     { title: rateTitle, dataIndex: rateKey, width: 110 },
     { title: runtimeTitle, dataIndex: runtimeKey, width: 110 },
     { title: stopTitle, dataIndex: stopKey, width: 100 },
-    {
-      title: '停窑标记',
-      dataIndex: 'stopFlag',
-      width: 82,
-      customRender: ({ record }: any) => {
-        const stopped = Number(record[stopKey] || 0) > 0
-        return h('span', { class: stopped ? 'stop-flag stop-flag-danger' : 'stop-flag stop-flag-normal' }, stopped ? '停窑' : '正常')
-      }
-    },
   ]
 })
 
@@ -334,26 +341,11 @@ const equipmentDetailTableData = computed(() =>
   }))
 )
 
-const equipmentSummaryCards = computed(() => {
-  const map = new Map<string, { deviceCount: number; stopDeviceCount: number; stopHours: number }>()
-  equipmentDetailTableData.value.forEach((row) => {
-    if (!map.has(row.base)) map.set(row.base, { deviceCount: 0, stopDeviceCount: 0, stopHours: 0 })
-    const item = map.get(row.base)!
-    item.deviceCount += 1
-    const stopHours = Number(row.stopHoursDay || 0)
-    if (stopHours > 0 || Number(row.stopCount || 0) > 0) item.stopDeviceCount += 1
-    item.stopHours += stopHours
-  })
-  return Array.from(map.entries()).map(([base, info]) => ({
-    base,
-    deviceCount: info.deviceCount,
-    stopDeviceCount: info.stopDeviceCount,
-    stopHours: +info.stopHours.toFixed(2),
-  }))
-})
-
 const equipmentRowClassName = (record: any) => {
-  const stopped = Number(record?.stopHoursDay || 0) > 0 || Number(record?.stopHoursMonth || 0) > 0 || Number(record?.stopHoursYear || 0) > 0
+  const isDay = equipmentMetric.value === 'day'
+  const isMonth = equipmentMetric.value === 'month'
+  const stopKey = isDay ? 'stopHoursDay' : (isMonth ? 'stopHoursMonth' : 'stopHoursYear')
+  const stopped = Number(record?.[stopKey] || 0) > 0
   return stopped ? 'equipment-child-row equipment-stop-row' : 'equipment-child-row'
 }
 
@@ -504,14 +496,15 @@ function initCharts() {
           const idx = params?.[0]?.dataIndex ?? 0
           const row = equipData[idx]
           if (!row) return ''
+          const isDay = equipmentMetric.value === 'day'
+          const isMonth = equipmentMetric.value === 'month'
+          const label = isDay ? '日' : (isMonth ? '月' : '年')
+          const rate = isDay ? row.run_rate_day : (isMonth ? row.run_rate_month : row.run_rate_year)
+          const runtime = isDay ? row.runtime_day : (isMonth ? row.runtime_month : row.runtime_year)
           return [
-            `<b>${row.base}-${row.name}</b>`,
-            `日运转率：${row.run_rate_day}%`,
-            `月运转率：${row.run_rate_month}%`,
-            `年运转率：${row.run_rate_year}%`,
-            `日运行时间：${row.runtime_day} h`,
-            `月运行时间：${row.runtime_month} h`,
-            `年运行时间：${row.runtime_year} h`,
+            `<b>${row.name}</b>`,
+            `${label}运转率：${rate}%`,
+            `${label}运行时间：${runtime} h`,
           ].join('<br/>')
         }
       },
@@ -661,23 +654,6 @@ onUnmounted(() => {
   background: #fff7f7;
 }
 
-.equipment-summary-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 6px;
-}
-
-.equipment-summary-item {
-  border: 1px solid #e6f4ff;
-  border-radius: 6px;
-  background: #f7fbff;
-  padding: 4px 8px;
-  display: flex;
-  gap: 10px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
 .stop-flag {
   display: inline-block;
   min-width: 40px;
@@ -696,5 +672,16 @@ onUnmounted(() => {
 .stop-flag-normal {
   background: #f6ffed;
   color: #389e0d;
+}
+
+.query-switch-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.switch-label {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 </style>

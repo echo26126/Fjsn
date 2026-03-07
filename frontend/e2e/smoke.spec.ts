@@ -30,11 +30,6 @@ test.describe('Smoke Tests - Key Pages', () => {
     await expect(page).toHaveURL(/.*sales-forecast/);
   });
 
-  test('should load Balance Optimize', async ({ page }) => {
-    await page.goto('/balance');
-    await expect(page).toHaveURL(/.*balance/);
-  });
-
   test('should load Data Management', async ({ page }) => {
     await page.goto('/data');
     await expect(page).toHaveURL(/.*data/);

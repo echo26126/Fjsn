@@ -7,6 +7,28 @@
       </a-space>
     </div>
 
+    <div class="query-switch-row">
+      <a-space size="small" wrap>
+        <span class="switch-label">周期</span>
+        <a-radio-group v-model:value="inventoryMode" size="small" button-style="solid">
+          <a-radio-button value="month">月</a-radio-button>
+          <a-radio-button value="year">年</a-radio-button>
+        </a-radio-group>
+        <a-tag color="blue">{{ layerPeriodLabel }}</a-tag>
+        <span class="switch-label">基地</span>
+        <a-select v-model:value="selectedBase" size="small" style="width: 150px">
+          <a-select-option value="all">全部基地</a-select-option>
+          <a-select-option v-for="item in appStore.baseOptions" :key="item" :value="item">{{ item }}</a-select-option>
+        </a-select>
+        <span class="switch-label">品类</span>
+        <a-radio-group v-model:value="selectedCategory" size="small" button-style="solid">
+          <a-radio-button value="all">全部</a-radio-button>
+          <a-radio-button value="cement">水泥</a-radio-button>
+          <a-radio-button value="clinker">熟料</a-radio-button>
+        </a-radio-group>
+      </a-space>
+    </div>
+
     <!-- 库存水位卡片 -->
     <div class="water-level-grid" style="margin-bottom: 16px">
       <div v-for="item in filteredInventory" :key="item.base" class="water-card" :class="{ 'water-card-active': activeBase === item.base }" @click="activeBase = item.base">
@@ -61,6 +83,7 @@ import * as echarts from 'echarts'
 import { DownloadOutlined } from '@ant-design/icons-vue'
 import { useAppStore } from '@/stores/app'
 import { queryApi } from '@/api'
+import dayjs from 'dayjs'
 
 const appStore = useAppStore()
 const selectedBase = computed({
@@ -71,14 +94,44 @@ const selectedCategory = computed({
   get: () => appStore.selectedCategory,
   set: (val: string) => { appStore.selectedCategory = val }
 })
+const inventoryMode = computed<'year' | 'month'>({
+  get: () => appStore.timeMode === 'year' ? 'year' : 'month',
+  set: (val) => {
+    const currentYear = String(appStore.timePoint).slice(0, 4) || '2025'
+    if (val === 'year') {
+      appStore.timeMode = 'year'
+      appStore.timePoint = currentYear
+      return
+    }
+    appStore.timeMode = 'month'
+    const currentMonth = /^\d{4}-\d{2}$/.test(appStore.timePoint) ? appStore.timePoint.slice(5, 7) : '12'
+    appStore.timePoint = `${currentYear}-${currentMonth}`
+  }
+})
 
 // API Data
 const inventoryList = ref<any[]>([])
 const inventoryTrend = ref<any>({ months: [], total_inventory: [], safety_line: 0 })
+const queryPeriod = computed(() => appStore.timeMode === 'year' ? 'year' : 'month')
+const queryPoint = computed(() => {
+  if (appStore.timeMode === 'year') return `${String(appStore.timePoint).slice(0, 4)}-12`
+  if (appStore.timeMode === 'range') return appStore.dateRange[1].slice(0, 7)
+  return appStore.timePoint
+})
+const layerPeriodLabel = computed(() => {
+  if (appStore.timeMode === 'year') return `${String(appStore.timePoint).slice(0, 4)}年`
+  if (appStore.timeMode === 'range') {
+    const [start, end] = appStore.dateRange
+    return `${dayjs(start).format('YYYY年M月D日')} - ${dayjs(end).format('M月D日')}`
+  }
+  return `${dayjs(`${appStore.timePoint}-01`).format('YYYY年M月')}`
+})
 
 const fetchData = async () => {
   try {
     const res = await queryApi.getInventory({
+      period: queryPeriod.value,
+      point: queryPoint.value,
       base: selectedBase.value === 'all' ? undefined : selectedBase.value,
       category: selectedCategory.value === 'all' ? undefined : selectedCategory.value
     })
@@ -142,6 +195,7 @@ const activeBase = ref<string>('all')
 const effectiveBase = computed(() => activeBase.value === 'all' ? selectedBase.value : activeBase.value)
 
 const columns = [
+  { title: '周期', dataIndex: 'period', width: 100 },
   { title: '基地', dataIndex: 'base', width: 100 },
   { title: '品类', dataIndex: 'category', width: 80 },
   { title: '期初库存(万吨)', dataIndex: 'begin', width: 130 },
@@ -153,6 +207,8 @@ const columns = [
 ]
 
 const formatPeriodLabel = (raw: string) => {
+  const dayHit = raw.match(/^(\d{1,2})月(\d{1,2})日$/)
+  if (dayHit) return dayHit[2]
   if (/^\d{4}-\d{2}$/.test(raw)) {
     return `${Number(raw.slice(5, 7))}月`
   }
@@ -163,23 +219,48 @@ const formatPeriodLabel = (raw: string) => {
 }
 
 const tableData = computed(() => {
-  const list = inventoryList.value.map((item, i) => ({
-    key: i,
-    base: item.base,
-    category: item.category || '水泥',
-    begin: item.begin_qty,
-    end: item.end_qty,
-    available: item.available_qty,
-    capacity: item.capacity,
-    ratio: item.ratio_pct + '%',
-    status: item.status,
-  }))
-  const monthFiltered = drillMonth.value === 'all' ? list : list.filter(item => {
-    const period = String((inventoryList.value[item.key]?.month ?? inventoryList.value[item.key]?.period ?? inventoryList.value[item.key]?.date ?? ''))
-    return period.includes(drillMonth.value)
+  const months = (inventoryTrend.value.months || []) as string[]
+  const baseTrendMap = (inventoryTrend.value.base_category_trend || {}) as Record<string, Array<number | null>>
+  const capacityMap = new Map<string, number>()
+  inventoryList.value.forEach((item: any) => {
+    capacityMap.set(`${item.base}|${item.category}`, Number(item.capacity || 0))
   })
-  if (activeBase.value === 'all') return monthFiltered
-  return monthFiltered.filter(item => item.base === activeBase.value)
+  const bases = selectedBase.value === 'all' ? appStore.baseOptions : [selectedBase.value]
+  const targetBases = activeBase.value === 'all' ? bases : bases.filter(b => b === activeBase.value)
+  const categories = selectedCategory.value === 'all'
+    ? (['熟料', '水泥'] as string[])
+    : [selectedCategory.value === 'clinker' ? '熟料' : '水泥']
+  const rows: any[] = []
+  targetBases.forEach(base => {
+    categories.forEach(category => {
+      const key = `${base}|${category}`
+      const series = baseTrendMap[key] || []
+      const capacity = Number(capacityMap.get(key) || 0)
+      for (let i = 0; i < months.length; i += 1) {
+        const endRaw = series[i]
+        if (endRaw === null || endRaw === undefined) continue
+        const end = Number(endRaw || 0)
+        const beginRef = i > 0 ? series[i - 1] : null
+        const begin = beginRef === null || beginRef === undefined ? 0 : Number(beginRef)
+        const ratioPct = capacity > 0 ? +(end / capacity * 100).toFixed(1) : 0
+        rows.push({
+          key: `${base}-${category}-${months[i]}-${i}`,
+          period: formatPeriodLabel(String(months[i] || '')),
+          periodRaw: String(months[i] || ''),
+          base,
+          category,
+          begin: +begin.toFixed(2),
+          end: +end.toFixed(2),
+          available: +(end * 0.95).toFixed(2),
+          capacity: +capacity.toFixed(2),
+          ratio: `${ratioPct}%`,
+          status: ratioPct > 85 ? '高位' : (ratioPct < 30 ? '低位' : '正常'),
+        })
+      }
+    })
+  })
+  if (drillMonth.value === 'all') return rows
+  return rows.filter(item => String(item.periodRaw).includes(drillMonth.value))
 })
 
 function initCharts() {
@@ -255,9 +336,10 @@ function initCharts() {
     })
     chart2.off('click')
     chart2.on('click', (params: any) => {
-      const month = params?.name
-      if (!month) return
-      drillMonth.value = String(month)
+      const index = Number(params?.dataIndex ?? -1)
+      const raw = index >= 0 ? String(months[index] || '') : String(params?.name || '')
+      if (!raw || raw.includes('日')) return
+      drillMonth.value = raw
     })
   }
 }
@@ -266,6 +348,7 @@ const handleResize = () => { chart1?.resize(); chart2?.resize() }
 onMounted(() => { initCharts(); fetchData(); window.addEventListener('resize', handleResize) })
 watch([() => appStore.queryNonce, () => appStore.timePoint], () => { fetchData() })
 watch([() => appStore.timeMode, () => appStore.dateRange], () => { fetchData() }, { deep: true })
+watch([selectedBase, selectedCategory], () => { fetchData() })
 watch(() => selectedBase.value, (base) => {
   activeBase.value = base === 'all' ? 'all' : base
   initCharts()
@@ -377,5 +460,16 @@ onUnmounted(() => { window.removeEventListener('resize', handleResize); chart1?.
   border-radius: 6px;
   background: color-mix(in srgb, var(--primary-color) 12%, var(--card-bg));
   color: var(--text-primary);
+}
+
+.query-switch-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.switch-label {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 </style>

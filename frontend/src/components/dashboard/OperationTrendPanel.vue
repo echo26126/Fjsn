@@ -18,25 +18,16 @@ const props = defineProps<{
   inventoryRows: Array<{ base: string; clinker: number; cement: number }>
   dailyInventory: { days: string[]; clinker_inventory: number[]; cement_inventory: number[] }
   salesTrend: { months: string[]; qty: number[]; avg_price: number[] }
+  salesItems: Array<{ spec: string; package: string; qty: number }>
 }>()
 
 const chartRef = ref<HTMLElement>()
 
 const panelTitle = computed(() => {
-  if (props.viewMode === 'sales') return '销售月度趋势'
+  if (props.viewMode === 'sales') return '销售品类结构（型号×规格）'
   if (props.selectedBase !== 'all') return `${props.selectedBase}12月每日库存趋势`
   return '基地库存结构'
 })
-
-const formatMonthLabel = (raw: string) => {
-  if (/^\d{4}-\d{2}$/.test(raw)) {
-    return `${Number(raw.slice(5, 7))}月`
-  }
-  if (/^\d{4}$/.test(raw)) {
-    return `${raw}年`
-  }
-  return raw
-}
 
 const getOption = (isDark: boolean): echarts.EChartsOption => {
   const textColor = getCssVar('--text-secondary')
@@ -123,57 +114,61 @@ const getOption = (isDark: boolean): echarts.EChartsOption => {
     }
   }
 
-  const months = (props.salesTrend?.months || []).map(formatMonthLabel)
-  const qty = props.salesTrend?.qty || []
-  const avgPrice = props.salesTrend?.avg_price || []
+  const sourceRows = (props.salesItems || []).map(row => ({
+    model: String(row.spec || '').trim() || '未分类',
+    pkg: String(row.package || '').trim() || '未标注',
+    qty: Number(row.qty || 0),
+  }))
+  const modelList = Array.from(new Set(sourceRows.map(item => item.model)))
+  const packageOrder = ['熟料', '散', '袋', '未标注']
+  const packageList = Array.from(new Set(sourceRows.map(item => item.pkg))).sort((a, b) => {
+    const ia = packageOrder.indexOf(a)
+    const ib = packageOrder.indexOf(b)
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+  })
+  const modelPackageMap = new Map<string, number>()
+  sourceRows.forEach(item => {
+    const key = `${item.model}__${item.pkg}`
+    modelPackageMap.set(key, (modelPackageMap.get(key) || 0) + item.qty)
+  })
+  const colorMap: Record<string, string> = {
+    '熟料': isDark ? '#8E7CFF' : '#6f5ef9',
+    '散': isDark ? '#00D4FF' : '#2F8CFF',
+    '袋': isDark ? '#2ECFD1' : '#15b9bb',
+    '未标注': '#94a3b8',
+  }
   return {
     tooltip: { trigger: 'axis' },
-    legend: { data: ['出库量', '均价'], top: 0, textStyle: { color: textColor, fontSize: 11 } },
-    grid: { top: 30, right: 46, bottom: 28, left: 46 },
+    legend: { data: packageList, top: 0, textStyle: { color: textColor, fontSize: 11 } },
+    grid: { top: 30, right: 16, bottom: 28, left: 46 },
     xAxis: {
       type: 'category',
-      data: months,
+      data: modelList,
       axisLabel: { color: textColor, fontSize: 10 },
       axisLine: { lineStyle: { color: borderColor } }
     },
-    yAxis: [
-      {
-        type: 'value',
-        name: '万吨',
-        nameTextStyle: { color: textColor, fontSize: 10 },
-        axisLabel: { color: textColor, fontSize: 10 },
-        splitLine: { lineStyle: { color: borderColor, type: 'dashed' } }
-      },
-      {
-        type: 'value',
-        name: '元/吨',
-        nameTextStyle: { color: textColor, fontSize: 10 },
-        axisLabel: { color: textColor, fontSize: 10 },
-        splitLine: { show: false }
+    yAxis: {
+      type: 'value',
+      name: '万吨',
+      nameTextStyle: { color: textColor, fontSize: 10 },
+      axisLabel: { color: textColor, fontSize: 10 },
+      splitLine: { lineStyle: { color: borderColor, type: 'dashed' } }
+    },
+    series: packageList.map((pkg, idx) => ({
+      name: pkg,
+      type: 'bar',
+      stack: 'qty',
+      barMaxWidth: 24,
+      data: modelList.map(model => +(modelPackageMap.get(`${model}__${pkg}`) || 0).toFixed(2)),
+      itemStyle: {
+        color: colorMap[pkg] || primaryColor,
+        borderRadius: idx === packageList.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]
       }
-    ],
-    series: [
-      {
-        name: '出库量',
-        type: 'bar',
-        data: qty,
-        barMaxWidth: 24,
-        itemStyle: { color: primaryColor, borderRadius: [5, 5, 0, 0] }
-      },
-      {
-        name: '均价',
-        type: 'line',
-        yAxisIndex: 1,
-        smooth: true,
-        data: avgPrice,
-        lineStyle: { color: '#faad14', width: 2 },
-        itemStyle: { color: '#faad14' }
-      }
-    ]
+    }))
   }
 }
 
-const dependencies = computed(() => [props.viewMode, props.selectedBase, props.inventoryRows, props.dailyInventory, props.salesTrend])
+const dependencies = computed(() => [props.viewMode, props.selectedBase, props.inventoryRows, props.dailyInventory, props.salesTrend, props.salesItems])
 useECharts(chartRef, getOption, [dependencies])
 </script>
 

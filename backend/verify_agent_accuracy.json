@@ -1,0 +1,26 @@
+[
+  {
+    "q": "12月份安砂的熟料产量",
+    "answer": "已基于生产表查询到1条记录：安砂建福-熟料产量7.55万吨(计划6.65万吨)",
+    "sql": "SELECT base, category, actual_qty, plan_qty, variance_pct, period FROM fact_production WHERE period='2025-12' AND base LIKE '%安砂建福%' AND category='熟料' ORDER BY actual_qty DESC",
+    "rows": 1
+  },
+  {
+    "q": "12月份安砂熟料库存",
+    "answer": "已基于库存表查询到1条记录：安砂建福-熟料库存0.0万吨",
+    "sql": "SELECT base, category, end_qty, period FROM fact_inventory WHERE period='2025-12' AND base LIKE '%安砂建福%' AND category='熟料' ORDER BY end_qty DESC",
+    "rows": 1
+  },
+  {
+    "q": "12月份安砂销售情况",
+    "answer": "已基于销售表查询到1条记录：安砂建福销量24.85万吨，均价254.0元",
+    "sql": "SELECT base, SUM(qty) AS qty, ROUND(AVG(avg_price), 0) AS avg_price, SUM(amount) AS amount, period FROM fact_sales WHERE period='2025-12' AND base LIKE '%安砂建福%' GROUP BY base, period ORDER BY qty DESC",
+    "rows": 1
+  },
+  {
+    "q": "12月份福州订单情况",
+    "answer": "已基于订单表查询到1条记录：福州炼石订单5.33248万吨，已出库12.195623万吨",
+    "sql": "SELECT base, SUM(order_qty) AS order_qty, SUM(outbound_qty) AS outbound_qty, period FROM fact_orders WHERE period='2025-12' AND base LIKE '%福州炼石%' GROUP BY base, period ORDER BY order_qty DESC",
+    "rows": 1
+  }
+]

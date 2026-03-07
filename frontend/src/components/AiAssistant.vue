@@ -18,18 +18,7 @@
     </div>
 
     <div class="ai-body" ref="bodyRef">
-      <div v-if="appStore.aiMessages.length === 0" class="ai-welcome">
-        <p style="color: #999; margin-bottom: 12px">常用问题</p>
-        <div class="quick-questions">
-          <a-tag
-            v-for="q in quickQuestions"
-            :key="q"
-            color="blue"
-            class="quick-tag"
-            @click="sendQuestion(q)"
-          >{{ q }}</a-tag>
-        </div>
-      </div>
+      <!-- 常见问题已移除 -->
 
       <div v-for="(msg, i) in appStore.aiMessages" :key="i" class="msg-row" :class="msg.role">
         <div class="msg-bubble" :class="msg.role">
@@ -59,19 +48,24 @@
     </div>
 
     <div class="ai-footer">
-      <a-input
-        v-model:value="inputText"
-        placeholder="请输入问题..."
-        @pressEnter="onSend"
-        :disabled="loading"
-      >
-        <template #suffix>
-          <SendOutlined
-            :style="{ color: inputText ? '#1677ff' : '#ccc', cursor: inputText ? 'pointer' : 'default' }"
-            @click="onSend"
-          />
-        </template>
-      </a-input>
+      <div class="input-wrapper">
+        <a-textarea
+          v-model:value="inputText"
+          placeholder="请输入问题..."
+          :auto-size="{ minRows: 2, maxRows: 6 }"
+          @keydown.enter="handleEnterKey"
+          class="chat-input"
+        />
+        <div v-if="loading" class="stop-btn-wrapper" @click="stopGeneration">
+          <div class="stop-icon"></div>
+        </div>
+        <SendOutlined
+          v-else
+          class="send-btn"
+          :style="{ color: inputText ? '#1677ff' : '#ccc', cursor: inputText ? 'pointer' : 'default' }"
+          @click="onSend"
+        />
+      </div>
     </div>
 
     <div class="resize-handle" @mousedown.stop="startResize"></div>
@@ -88,6 +82,7 @@ import { agentApi } from '@/api'
 const appStore = useAppStore()
 const inputText = ref('')
 const loading = ref(false)
+const abortController = ref<AbortController | null>(null)
 const bodyRef = ref<HTMLElement>()
 const maximized = ref(false)
 const chartEls = reactive<Record<number, HTMLElement | null>>({})
@@ -111,19 +106,6 @@ function updateWindowStyle() {
 }
 updateWindowStyle()
 
-const quickQuestions = [
-  '本月各基地产量排名',
-  '库存最高的基地?',
-  '上月出库量同比变化',
-  '全省产销平衡指数',
-  '哪些区域存在缺货风险?',
-]
-
-async function sendQuestion(q: string) {
-  inputText.value = q
-  await onSend()
-}
-
 async function onSend() {
   const text = inputText.value.trim()
   if (!text || loading.value) return
@@ -133,12 +115,14 @@ async function onSend() {
   const aiIndex = appStore.aiMessages.length - 1
   inputText.value = ''
   loading.value = true
+  const controller = new AbortController()
+  abortController.value = controller
 
   await nextTick()
   scrollToBottom()
 
   try {
-    const response = await agentApi.chatStream(text)
+    const response = await agentApi.chatStream(text, undefined, controller.signal)
     if (!response.ok || !response.body) {
       throw new Error('stream_failed')
     }
@@ -146,6 +130,10 @@ async function onSend() {
     const decoder = new TextDecoder('utf-8')
     let buffer = ''
     while (true) {
+      if (controller.signal.aborted) {
+        reader.cancel()
+        break
+      }
       const { done, value } = await reader.read()
       if (done) break
       buffer += decoder.decode(value, { stream: true })
@@ -177,27 +165,52 @@ async function onSend() {
     if (!appStore.aiMessages[aiIndex]?.content) {
       appStore.aiMessages[aiIndex].content = '未返回文本结果。'
     }
-  } catch (error) {
-    try {
-      const res: any = await agentApi.chat(text)
+  } catch (error: any) {
+    if (error.name === 'AbortError' || controller.signal.aborted) {
       const current = appStore.aiMessages[aiIndex]
-      if (res && res.answer && current) {
-        current.content = res.answer
-        current.sql = res.sql ?? null
-        current.data = Array.isArray(res.data) ? res.data : []
-        current.chartType = res.chart_type || 'kpi'
-        await nextTick()
-        renderMessageChart(aiIndex, current)
-      } else if (current) {
-        current.content = '未拿到有效回答。'
+      if (current) {
+        current.content += ' [已停止生成]'
+      }
+      return
+    }
+    try {
+      if (!controller.signal.aborted) {
+        const res: any = await agentApi.chat(text)
+        const current = appStore.aiMessages[aiIndex]
+        if (res && res.answer && current) {
+          current.content = res.answer
+          current.sql = res.sql ?? null
+          current.data = Array.isArray(res.data) ? res.data : []
+          current.chartType = res.chart_type || 'kpi'
+          await nextTick()
+          renderMessageChart(aiIndex, current)
+        } else if (current) {
+          current.content = '未拿到有效回答。'
+        }
       }
     } catch {
       appStore.aiMessages[aiIndex].content = '抱歉，连接服务失败，请稍后重试。'
     }
   } finally {
     loading.value = false
+    abortController.value = null
     await nextTick()
     scrollToBottom()
+  }
+}
+
+function stopGeneration() {
+  if (abortController.value) {
+    abortController.value.abort()
+    abortController.value = null
+    loading.value = false
+  }
+}
+
+function handleEnterKey(e: KeyboardEvent) {
+  if (!e.shiftKey) {
+    e.preventDefault()
+    onSend()
   }
 }
 
@@ -392,23 +405,10 @@ onUnmounted(() => {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
+  background: #f9f9f9;
 }
 
-.ai-welcome {
-  text-align: center;
-  padding-top: 20px;
-}
-
-.quick-questions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-}
-.quick-tag {
-  cursor: pointer;
-  font-size: 12px;
-}
+/* 常见问题样式已移除 */
 
 .msg-row {
   margin-bottom: 12px;
@@ -473,9 +473,73 @@ onUnmounted(() => {
 }
 
 .ai-footer {
-  padding: 12px;
-  border-top: 1px solid #f0f0f0;
+  padding: 24px 20px;
+  border-top: 1px solid #e8e8e8;
+  background: #fff;
   flex-shrink: 0;
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+}
+
+.chat-input {
+  min-height: 64px; /* 初始高度 */
+  border-radius: 8px;
+  font-size: 18px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  padding-right: 48px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+  resize: none;
+}
+
+.chat-input:hover, .chat-input:focus {
+  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.1);
+}
+
+.send-btn {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  font-size: 26px;
+  margin-right: 0;
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.stop-btn-wrapper {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  background: #ff4d4f;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.stop-icon {
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 2px;
+}
+
+.stop-btn-wrapper:hover {
+  background: #ff7875;
+  transform: scale(1.1);
+}
+
+.send-btn:hover {
+  transform: scale(1.1);
 }
 
 .resize-handle {

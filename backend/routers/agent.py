@@ -1,6 +1,5 @@
 import os
 import json
-import asyncio
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -35,49 +34,140 @@ class AgentConfigModel(BaseModel):
     model: str
     api_key: str
     temperature: float
+    analysis_channel: str = "auto"
     sql_prompt: str
     analysis_prompt: str
 
 class AgentApiKeyUpdate(BaseModel):
     api_key: str
 
+def _is_llm_error(text: str) -> bool:
+    return (text or "").strip().startswith("Error:")
+
+def _fmt_num(value: Any, digits: int = 2) -> str:
+    try:
+        num = float(value)
+    except Exception:
+        num = 0.0
+    text = f"{num:.{digits}f}"
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
+
+def _fallback_sales_answer(question: str, context: Dict[str, Any]) -> str:
+    items = list(context.get("sales_items") or [])
+    if not items:
+        return "模型服务暂时不可用。当前上下文未提供销售明细，请补充基地或日期后重试。"
+    preferred_keys = ["invoice_customer", "order_customer", "destination", "region"]
+    customer_key = "region"
+    for key in preferred_keys:
+        if any(str(it.get(key, "")).strip() for it in items):
+            customer_key = key
+            break
+    agg: Dict[str, Dict[str, float]] = {}
+    total_qty = 0.0
+    total_amount = 0.0
+    for item in items:
+        name = str(item.get(customer_key) or item.get("region") or "未命名客户").strip() or "未命名客户"
+        qty = float(item.get("qty") or 0.0)
+        amount = float(item.get("amount") or 0.0)
+        total_qty += qty
+        total_amount += amount
+        if name not in agg:
+            agg[name] = {"qty": 0.0, "amount": 0.0}
+        agg[name]["qty"] += qty
+        agg[name]["amount"] += amount
+    ranking = sorted(agg.items(), key=lambda x: x[1]["amount"], reverse=True)[:5]
+    avg_price = (total_amount / total_qty) if total_qty > 0 else 0.0
+    base_hint = str(context.get("base_hint") or "").strip() or "全部基地"
+    day_hint = context.get("day_hint")
+    period = f"2025-12-{int(day_hint):02d}" if isinstance(day_hint, int) and day_hint > 0 else "2025-12"
+    lines = [
+        f"结论：{period}（{base_hint}）销售样本共 {len(items)} 条，合计销量 {_fmt_num(total_qty)} 万吨，合计金额 {_fmt_num(total_amount)} 万元，均价约 {_fmt_num(avg_price, 0)} 元/吨。"
+    ]
+    if ranking:
+        top_parts = [f"{name}（{_fmt_num(val['amount'])}万元）" for name, val in ranking[:3]]
+        lines.append(f"关键客户（按金额）TOP3：{'、'.join(top_parts)}。")
+    lines.append("关键数据点：")
+    for idx, (name, val) in enumerate(ranking, start=1):
+        lines.append(f"{idx}) {name}：销量 {_fmt_num(val['qty'])} 万吨，金额 {_fmt_num(val['amount'])} 万元。")
+    return "\n".join(lines)
+
+def _fallback_inventory_answer(context: Dict[str, Any]) -> str:
+    rows = list(context.get("inventory_daily") or [])
+    if not rows:
+        return "模型服务暂时不可用。当前上下文未提供库存数据，请补充日期和基地后重试。"
+    total_cement = sum(float(r.get("cement_inventory_wt") or 0.0) for r in rows)
+    total_clinker = sum(float(r.get("clinker_inventory_wt") or 0.0) for r in rows)
+    ranking = sorted(
+        rows,
+        key=lambda r: float(r.get("cement_inventory_wt") or 0.0) + float(r.get("clinker_inventory_wt") or 0.0),
+        reverse=True
+    )[:5]
+    day = ranking[0].get("day") if ranking else "2025-12-31"
+    lines = [
+        f"结论：{day}库存样本显示，水泥库存合计 {_fmt_num(total_cement)} 万吨，熟料库存合计 {_fmt_num(total_clinker)} 万吨，总库存 {_fmt_num(total_cement + total_clinker)} 万吨。"
+    ]
+    lines.append("关键数据点：")
+    for idx, row in enumerate(ranking, start=1):
+        base = str(row.get("base") or "未知基地")
+        cement = float(row.get("cement_inventory_wt") or 0.0)
+        clinker = float(row.get("clinker_inventory_wt") or 0.0)
+        lines.append(f"{idx}) {base}：水泥 {_fmt_num(cement)} 万吨，熟料 {_fmt_num(clinker)} 万吨，合计 {_fmt_num(cement + clinker)} 万吨。")
+    return "\n".join(lines)
+
+def _fallback_production_answer(context: Dict[str, Any]) -> str:
+    rows = list(context.get("production_daily") or [])
+    if not rows:
+        return "模型服务暂时不可用。当前上下文未提供生产数据，请补充日期和基地后重试。"
+    total_daily_prod = sum(float(r.get("daily_prod") or 0.0) for r in rows)
+    total_month_prod = sum(float(r.get("month_prod") or r.get("actual_qty") or 0.0) for r in rows)
+    avg_util = sum(float(r.get("utilization") or 0.0) for r in rows) / len(rows) if rows else 0.0
+    ranking = sorted(rows, key=lambda r: float(r.get("month_prod") or r.get("actual_qty") or 0.0), reverse=True)[:5]
+    period = str(rows[0].get("period") or "2025-12")
+    lines = [
+        f"结论：{period}生产样本合计当日产量 {_fmt_num(total_daily_prod)} 万吨，月累计产量 {_fmt_num(total_month_prod)} 万吨，平均产能利用率 {_fmt_num(avg_util, 1)}%。"
+    ]
+    lines.append("关键数据点：")
+    for idx, row in enumerate(ranking, start=1):
+        base = str(row.get("base") or "未知基地")
+        month_prod = float(row.get("month_prod") or row.get("actual_qty") or 0.0)
+        util = float(row.get("utilization") or 0.0)
+        lines.append(f"{idx}) {base}：月累计产量 {_fmt_num(month_prod)} 万吨，产能利用率 {_fmt_num(util, 1)}%。")
+    return "\n".join(lines)
+
+def _build_local_fallback_answer(question: str, context: Dict[str, Any]) -> str:
+    text = str(question or "")
+    if any(k in text for k in ["库存", "库容"]):
+        return _fallback_inventory_answer(context)
+    if any(k in text for k in ["产量", "生产", "窑"]):
+        return _fallback_production_answer(context)
+    if any(k in text for k in ["销售", "客户", "订单", "出库", "均价", "金额"]):
+        return _fallback_sales_answer(question, context)
+    if context.get("sales_items"):
+        return _fallback_sales_answer(question, context)
+    if context.get("inventory_daily"):
+        return _fallback_inventory_answer(context)
+    if context.get("production_daily"):
+        return _fallback_production_answer(context)
+    return "模型服务暂时不可用。当前上下文数据不足，请补充具体日期、基地和指标后重试。"
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest, current_user: Optional[UserRead] = Depends(read_users_me)):
-    # Chat 接口目前允许登录用户访问，或者根据需求也可以允许匿名（如果 token 是可选的）
-    # 这里假设必须登录
     question = req.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
 
     try:
-        # 1. Get Schema Info
-        schema_info = db_service.get_schema_info()
-        
-        # 2. Generate SQL
-        sql = await llm_service.generate_sql(question, schema_info)
-        logger.info(f"Generated SQL: {sql}")
-        
-        # 3. Execute SQL (or Mock)
-        if "CANNOT ANSWER" in sql:
-            return ChatResponse(
-                answer="抱歉，根据现有数据无法回答该问题。",
-                sql=None
-            )
-            
-        data = await db_service.execute_query(sql)
-        logger.info(f"Query returned {len(data)} rows")
-        
-        # 4. Generate Answer
-        if not data:
-            answer = "未找到相关数据。"
-        else:
-            answer = await llm_service.analyze_data(question, data)
-            
+        file_context = db_service.build_file_context(question)
+        answer = await llm_service.answer_with_file_context(question, file_context)
+        if _is_llm_error(answer):
+            answer = _build_local_fallback_answer(question, file_context)
         return ChatResponse(
             answer=answer,
-            sql=sql,
-            data=data,
-            chart_type="bar" if len(data) > 1 else "kpi"
+            sql=None,
+            data=None,
+            chart_type="kpi"
         )
         
     except Exception as e:
@@ -96,22 +186,13 @@ async def chat_stream(req: ChatRequest, current_user: Optional[UserRead] = Depen
 
     async def event_gen():
         try:
-            schema_info = db_service.get_schema_info()
-            sql = await llm_service.generate_sql(question, schema_info)
-            if "CANNOT ANSWER" in sql:
-                payload = {"type": "delta", "content": "抱歉，根据现有数据无法回答该问题。"}
-                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-                done = {"type": "done", "sql": None, "data": [], "chart_type": "kpi"}
-                yield f"data: {json.dumps(done, ensure_ascii=False)}\n\n"
-                return
-            data = await db_service.execute_query(sql)
-            answer = "未找到相关数据。" if not data else await llm_service.analyze_data(question, data)
-            chunk_size = 18
-            for i in range(0, len(answer), chunk_size):
-                payload = {"type": "delta", "content": answer[i:i + chunk_size]}
-                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.015)
-            done = {"type": "done", "sql": sql, "data": data, "chart_type": "bar" if len(data) > 1 else "kpi"}
+            file_context = db_service.build_file_context(question)
+            answer = await llm_service.answer_with_file_context(question, file_context)
+            if _is_llm_error(answer):
+                answer = _build_local_fallback_answer(question, file_context)
+            payload = {"type": "delta", "content": answer}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            done = {"type": "done", "sql": None, "data": [], "chart_type": "kpi"}
             yield f"data: {json.dumps(done, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"Error processing chat stream request: {e}")
@@ -163,7 +244,7 @@ def update_agent_config(
     data = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
     before = llm_service.get_config(masked=True)
     updated = llm_service.update_config(data)
-    changed_fields = [k for k in ["provider", "base_url", "model", "temperature", "sql_prompt", "analysis_prompt"] if before.get(k) != updated.get(k)]
+    changed_fields = [k for k in ["provider", "base_url", "model", "temperature", "analysis_channel", "sql_prompt", "analysis_prompt"] if before.get(k) != updated.get(k)]
     audit_service.record(
         action="agent.config.update",
         operator=current_user.username,

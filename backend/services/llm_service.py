@@ -1,9 +1,11 @@
 import os
+import asyncio
 import httpx
 import json
 import logging
 import base64
 import hashlib
+import time
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -18,9 +20,10 @@ class LLMService:
         self.base_url = "https://api.deepseek.com"
         self.model = "deepseek-chat"
         self.temperature = 0.5
+        self.analysis_channel = "auto"
         self.sql_prompt_template = ""
         self.analysis_prompt_template = ""
-        self.timeout = 60.0
+        self.timeout = 8.0
         self.secret_key = os.getenv("AGENT_SECRET_KEY", "local-agent-secret")
         self._load_config()
 
@@ -99,6 +102,7 @@ Rules:
             "api_key_encrypted": self._encrypt_secret(os.getenv("LLM_API_KEY", "")),
             "has_api_key": bool(os.getenv("LLM_API_KEY", "")),
             "temperature": 0.5,
+            "analysis_channel": "auto",
             "sql_prompt": self._default_sql_prompt(),
             "analysis_prompt": self._default_analysis_prompt(),
         }
@@ -119,6 +123,8 @@ Rules:
         else:
             self.api_key = str(config.get("api_key", "") or "")
         self.temperature = float(config.get("temperature", 0.5))
+        channel = str(config.get("analysis_channel", "auto") or "auto").strip()
+        self.analysis_channel = channel if channel in ["auto", "agent", "simulate"] else "auto"
         self.sql_prompt_template = config.get("sql_prompt", self._default_sql_prompt())
         self.analysis_prompt_template = config.get("analysis_prompt", self._default_analysis_prompt())
         self._normalize_provider_config()
@@ -132,6 +138,7 @@ Rules:
             "api_key_encrypted": self._encrypt_secret(self.api_key),
             "has_api_key": bool(self.api_key),
             "temperature": self.temperature,
+            "analysis_channel": self.analysis_channel,
             "sql_prompt": self.sql_prompt_template,
             "analysis_prompt": self.analysis_prompt_template,
         }
@@ -145,6 +152,7 @@ Rules:
             "api_key": self._mask_api_key(self.api_key) if masked else self.api_key,
             "has_api_key": bool(self.api_key),
             "temperature": self.temperature,
+            "analysis_channel": self.analysis_channel,
             "sql_prompt": self.sql_prompt_template,
             "analysis_prompt": self.analysis_prompt_template,
         }
@@ -161,6 +169,9 @@ Rules:
             self.api_key = str(payload["api_key"]).strip()
         if "temperature" in payload:
             self.temperature = max(0.0, min(1.0, float(payload["temperature"])))
+        if "analysis_channel" in payload:
+            channel = str(payload["analysis_channel"] or "").strip()
+            self.analysis_channel = channel if channel in ["auto", "agent", "simulate"] else "auto"
         if "sql_prompt" in payload:
             self.sql_prompt_template = str(payload["sql_prompt"]).strip() or self._default_sql_prompt()
         if "analysis_prompt" in payload:
@@ -175,7 +186,7 @@ Rules:
         self._persist_config()
         return self.get_config(masked=True)
 
-    async def chat_completion(self, messages: List[Dict[str, str]], temperature: float | None = None) -> str:
+    async def chat_completion(self, messages: List[Dict[str, str]], temperature: float | None = None, model_override: str | None = None) -> str:
         """
         Call the LLM API for chat completion.
         """
@@ -188,25 +199,34 @@ Rules:
             "Content-Type": "application/json"
         }
 
+        model_name = model_override or self.model
         payload = {
-            "model": self.model,
+            "model": model_name,
             "messages": messages,
             "temperature": self.temperature if temperature is None else temperature,
             "stream": False
         }
 
+        started = time.perf_counter()
+        logger.info(f"LLM request start model={model_name} base_url={self.base_url} messages={len(messages)}")
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers=headers,
-                    json=payload
+                response = await asyncio.wait_for(
+                    client.post(
+                        f"{self.base_url}/chat/completions",
+                        headers=headers,
+                        json=payload
+                    ),
+                    timeout=self.timeout
                 )
                 response.raise_for_status()
                 result = response.json()
+                elapsed = time.perf_counter() - started
+                logger.info(f"LLM request success model={model_name} elapsed={elapsed:.2f}s")
                 return result["choices"][0]["message"]["content"]
         except Exception as e:
-            logger.error(f"Error calling LLM API: {e}")
+            elapsed = time.perf_counter() - started
+            logger.error(f"Error calling LLM API model={model_name} after {elapsed:.2f}s: {e}")
             return f"Error: Unable to process request. {str(e)}"
 
     def _get_mock_response(self, messages: List[Dict[str, str]]) -> str:
@@ -235,7 +255,22 @@ Schema Information:
             {"role": "user", "content": question}
         ]
         
-        response = await self.chat_completion(messages, temperature=0.1)
+        response = await self.chat_completion(messages, temperature=0.1, model_override=None)
+        if response.strip().upper().find("CANNOT ANSWER") >= 0 and self.provider == "deepseek":
+            reinforce_system = f"""{self.sql_prompt_template}
+
+Schema Information:
+{schema_info}
+
+补充要求：
+1) 对库存/销量/订单/产量类问题必须优先在事实表中选择最相关表并给出可执行SQL。
+2) 不要轻易返回 CANNOT ANSWER，只有确实无任何字段可映射时才返回。
+"""
+            reinforced_messages = [
+                {"role": "system", "content": reinforce_system},
+                {"role": "user", "content": question}
+            ]
+            response = await self.chat_completion(reinforced_messages, temperature=0.05, model_override=None)
         # Clean up response if it contains markdown
         response = response.strip()
         if response.startswith("```sql"):
@@ -251,13 +286,43 @@ Schema Information:
         """
         Generate a natural language answer based on the data.
         """
-        system_prompt = self.analysis_prompt_template
+        grounding_rules = """
+必须遵守：
+1) 仅根据提供的 Data 回答，禁止编造任何基地、数值、同比环比或原因。
+2) 若 Data 中没有某指标，必须明确说明“数据未提供该指标”，不得推断。
+3) 结论中的每个数字必须可在 Data 中找到。
+4) 不要输出与 Data 无关的模板化段落。
+"""
+        system_prompt = f"{self.analysis_prompt_template}\n\n{grounding_rules}"
         
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Question: {question}\nData: {json.dumps(data, ensure_ascii=False)}"}
         ]
-        
-        return await self.chat_completion(messages, temperature=self.temperature)
+        answer = await self.chat_completion(messages, temperature=self.temperature, model_override=None)
+        if answer.strip().startswith("Error:") and self.provider == "deepseek":
+            answer = await self.chat_completion(messages, temperature=self.temperature, model_override=None)
+        return answer
+
+    async def answer_with_file_context(self, question: str, context: Dict[str, Any]) -> str:
+        grounding_rules = """
+必须遵守：
+1) 只能根据“文件上下文”回答，禁止编造基地、日期、指标或原因。
+2) 每个数值都必须能在上下文中找到；找不到就明确说“未提供该数据”。
+3) 优先按“基地+日期+指标”精准作答，日期缺失时说明按月末或汇总口径回答。
+4) 库存优先使用 inventory_daily 的 *_wt（万吨）；若使用 *_ton 必须显式写“吨”。
+5) 不输出SQL、不提数据库表结构、不输出与问题无关模板话术。
+6) 输出格式：先结论（1-2句），再列2-5条关键数据点。
+"""
+        system_prompt = f"{self.analysis_prompt_template}\n\n{grounding_rules}"
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": f"问题：{question}\n文件上下文：{json.dumps(context, ensure_ascii=False)}"
+            }
+        ]
+        answer = await self.chat_completion(messages, temperature=min(self.temperature, 0.2), model_override=None)
+        return answer
 
 llm_service = LLMService()
