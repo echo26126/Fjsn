@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 暴露非标准端口
-EXPOSE 18888
+EXPOSE 42500
 
 # 启动命令
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "18888"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "42500"]

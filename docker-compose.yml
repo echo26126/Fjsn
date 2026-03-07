@@ -6,7 +6,7 @@ services:
     build: ./backend
     container_name: cement_backend
     ports:
-      - "18888:18888"
+      - "42500:42500"
     volumes:
       - ./backend/sql_app.db:/app/sql_app.db  # 挂载数据库文件，实现持久化
       - ./backend/data:/app/data              # 挂载配置与日志目录
@@ -19,7 +19,7 @@ services:
     build: ./frontend
     container_name: cement_frontend
     ports:
-      - "18080:18080"
+      - "32500:32500"
     depends_on:
       - backend
     restart: always

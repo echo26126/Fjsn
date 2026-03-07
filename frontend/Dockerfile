@@ -22,7 +22,7 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build-stage /app/dist /usr/share/nginx/html
 
 # 暴露非标准端口
-EXPOSE 18080
+EXPOSE 32500
 
 # 启动 Nginx
 CMD ["nginx", "-g", "daemon off;"]
