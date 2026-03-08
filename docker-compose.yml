@@ -1,14 +1,11 @@
-version: '3.8'
-
 services:
   # 后端服务 (FastAPI)
   backend:
     build: ./backend
     container_name: cement_backend
     ports:
-      - "42500:42500"
+      - "${BACKEND_PORT:-42500}:42500"
     volumes:
-      - ./backend/sql_app.db:/app/sql_app.db  # 挂载数据库文件，实现持久化
       - ./backend/data:/app/data              # 挂载配置与日志目录
     restart: always
     networks:
@@ -19,7 +16,7 @@ services:
     build: ./frontend
     container_name: cement_frontend
     ports:
-      - "32500:32500"
+      - "${FRONTEND_PORT:-32500}:32500"
     depends_on:
       - backend
     restart: always

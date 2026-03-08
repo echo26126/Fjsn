@@ -23,7 +23,7 @@ docker-compose up -d --build
 
 1.  **backend**: 基于 `python:3.10-slim`。
     - 运行 FastAPI 应用，监听 `42500` 端口。
-    - 数据持久化：`backend/sql_app.db` 映射到容器内。
+    - 数据持久化：SQLite 数据库写入 `backend/data/sql_app.db`。
 2.  **frontend**: 基于 `nginx:alpine` 的多阶段构建。
     - 静态文件托管在 Nginx。
     - 反向代理：Nginx 将 `/api` 请求转发至 `backend:42500`。
@@ -33,3 +33,4 @@ docker-compose up -d --build
 - **查看日志**: `docker-compose logs -f`
 - **停止并移除容器**: `docker-compose down`
 - **重启服务**: `docker-compose restart`
+- **自定义宿主机端口**: 启动前设置 `FRONTEND_PORT` / `BACKEND_PORT`
