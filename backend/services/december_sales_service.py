@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 import pandas as pd
+from services.data_paths import resolve_data_file
 
 
 BASE_ALIAS = {
@@ -53,7 +54,7 @@ def _normalize_package(pkg: str, material_name: str = "", spec: str = "") -> str
 
 class DecemberSalesService:
     def __init__(self):
-        self.sales_path = Path(__file__).resolve().parents[2] / "12月销售数据.xls"
+        self.sales_path = resolve_data_file("12月销售数据.xls")
 
     @lru_cache(maxsize=1)
     def _load_rows(self) -> pd.DataFrame:
@@ -62,12 +63,12 @@ class DecemberSalesService:
             "到达地", "市场类型", "物料名称", "型号", "规格", "数量", "含税净价", "价税合计"
         ])
         if not self.sales_path.exists():
-            df = empty_df.copy()
+            df = self._build_demo_sales_dataframe()
         else:
             try:
                 df = pd.read_excel(self.sales_path, sheet_name=0)
             except Exception:
-                df = empty_df.copy()
+                df = self._build_demo_sales_dataframe()
         expected_columns = [
             "出库日期",
             "库存组织",

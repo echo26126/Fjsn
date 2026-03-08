@@ -28,6 +28,12 @@ docker-compose up -d --build
     - 静态文件托管在 Nginx。
     - 反向代理：Nginx 将 `/api` 请求转发至 `backend:42500`。
 
+## 数据来源说明
+
+- 系统优先读取 Excel 数据文件：`福建水泥2025年12月生产日报表.xlsx`、`12月销售数据.xls`、`12月销售订单数据.xls`。
+- Docker 部署时可将上述文件放到 `backend/data-input/` 目录，容器会自动读取。
+- 若未提供 Excel 文件，系统会自动使用内置演示数据，确保看板和地图不再空白。
+
 ## 常用命令
 
 - **查看日志**: `docker-compose logs -f`

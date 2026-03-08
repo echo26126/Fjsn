@@ -6,7 +6,9 @@ services:
     ports:
       - "${BACKEND_PORT:-42500}:42500"
     volumes:
+      - ./backend/sql_app.db:/app/sql_app.db  # 挂载数据库文件，实现持久化
       - ./backend/data:/app/data              # 挂载配置与日志目录
+      - ./backend/data-input:/app/data-input  # 挂载Excel数据目录（可选）
     restart: always
     networks:
       - cement_network

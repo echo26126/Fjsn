@@ -8,6 +8,7 @@ import pandas as pd
 
 from services.december_report_service import december_report_service, BASE_NAMES
 from services.december_sales_service import december_sales_service
+from services.data_paths import resolve_data_file
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ class DBService:
         return df
 
     def _build_orders_df(self) -> pd.DataFrame:
-        path = Path(__file__).resolve().parents[2] / "12月销售订单数据.xls"
+        path = resolve_data_file("12月销售订单数据.xls")
         if not path.exists():
             return pd.DataFrame(columns=["base", "region", "material_name", "spec", "package", "order_qty", "outbound_qty", "period"])
         df = pd.read_excel(path, sheet_name=0)
@@ -173,7 +174,7 @@ Base Alias:
         base = self._extract_base(question)
         report_path = Path(december_report_service.report_path)
         sales_path = Path(december_sales_service.sales_path)
-        orders_path = Path(__file__).resolve().parents[2] / "12月销售订单数据.xls"
+        orders_path = resolve_data_file("12月销售订单数据.xls")
         source_status = {
             "production_report": report_path.exists(),
             "sales_file": sales_path.exists(),

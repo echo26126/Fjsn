@@ -6,6 +6,7 @@ import random
 import re
 
 import pandas as pd
+from services.data_paths import resolve_data_file
 
 
 BASE_NAMES = ["安砂建福", "永安建福", "顺昌炼石", "福州炼石", "宁德建福", "金银湖水泥"]
@@ -67,7 +68,7 @@ def _is_equipment_name(name: str) -> bool:
 
 class DecemberReportService:
     def __init__(self):
-        self.report_path = Path(__file__).resolve().parents[2] / "福建水泥2025年12月生产日报表.xlsx"
+        self.report_path = resolve_data_file("福建水泥2025年12月生产日报表.xlsx")
 
     @lru_cache(maxsize=1)
     def _parse_daily_data(self) -> Dict[str, Any]:
@@ -236,11 +237,11 @@ class DecemberReportService:
             for base in BASE_NAMES
         }
         if not self.report_path.exists():
-            return result
+            return self._build_demo_inventory_sheet()
         try:
             df = pd.read_excel(self.report_path, sheet_name="库存", header=None, dtype=str).fillna("")
         except Exception:
-            return result
+            return self._build_demo_inventory_sheet()
         for base in BASE_NAMES:
             result[base]["days"] = [f"12月{i}日" for i in range(1, 32)]
             result[base]["clinker_inventory"] = [0.0 for _ in range(31)]
@@ -275,6 +276,38 @@ class DecemberReportService:
                 series[-1] = round(_to_float(adjust_text) * 10000, 2)
             if len(series) == 31:
                 result[base_key][category] = series
+        if all(not result[base]["clinker_inventory"] and not result[base]["cement_inventory"] for base in BASE_NAMES):
+            return self._build_demo_inventory_sheet()
+        return result
+
+    def _build_demo_inventory_sheet(self) -> Dict[str, Any]:
+        result = {
+            base: {"days": [f"12月{i}日" for i in range(1, 32)], "clinker_inventory": [], "cement_inventory": []}
+            for base in BASE_NAMES
+        }
+        base_capacity = {
+            "安砂建福": (21.2, 15.7),
+            "永安建福": (5.9, 5.5),
+            "顺昌炼石": (16.64, 5.5),
+            "福州炼石": (5.5, 5.9),
+            "宁德建福": (5.15, 5.15),
+            "金银湖水泥": (0.0, 15.7),
+        }
+        for base in BASE_NAMES:
+            clinker_cap_wt, cement_cap_wt = base_capacity.get(base, (6.0, 6.0))
+            clinker_cap_ton = clinker_cap_wt * 10000
+            cement_cap_ton = cement_cap_wt * 10000
+            seed = random.Random(f"inventory-{base}-2025-12")
+            clinker_series: List[float] = []
+            cement_series: List[float] = []
+            for day in range(1, 32):
+                trend = day / 31
+                clinker_ratio = max(0.08, min(0.92, 0.52 + 0.18 * trend + seed.uniform(-0.04, 0.04)))
+                cement_ratio = max(0.12, min(0.95, 0.48 + 0.22 * trend + seed.uniform(-0.05, 0.05)))
+                clinker_series.append(round(clinker_cap_ton * clinker_ratio, 2))
+                cement_series.append(round(cement_cap_ton * cement_ratio, 2))
+            result[base]["clinker_inventory"] = clinker_series
+            result[base]["cement_inventory"] = cement_series
         return result
 
     def get_base_daily_inventory(self, base: str):
@@ -411,7 +444,7 @@ class DecemberReportService:
                         for row in rows:
                             row["period"] = "2025-12"
                     return rows
-        return []
+        return self._build_synthetic_rows(period=period, point=point or "2025-12-31", base=base, category=category)
 
     def get_equipment_summary(self, point: str, base: str = "") -> List[Dict[str, float]]:
         month = int(point[5:7]) if len(point) >= 7 and point[5:7].isdigit() else 0
