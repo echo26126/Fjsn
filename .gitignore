@@ -47,6 +47,9 @@ temp/
 *.xls
 *.xlsx
 *.png
+!backend/data-input/
+!backend/data-input/*.xls
+!backend/data-input/*.xlsx
 
 # Project specific exclusions
 sql_app.db
