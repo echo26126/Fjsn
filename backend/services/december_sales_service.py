@@ -174,10 +174,25 @@ class DecemberSalesService:
             month_df = month_df[month_df["region"] == region]
 
         if month_df.empty:
-            return {
-                "items": [],
-                "price_trend": {"months": [month], "qty": [0], "avg_price": [0]},
-            }
+            non_empty_months = [m for m in sorted(df["month_key"].dropna().astype(str).unique().tolist()) if m and m.lower() != "nan"]
+            fallback_month = non_empty_months[-1] if non_empty_months else month
+            month_df = df[df["month_key"] == fallback_month].copy()
+            if base:
+                month_df = month_df[month_df["base"] == base]
+            if region:
+                month_df = month_df[month_df["region"] == region]
+            if month_df.empty:
+                df = self._build_demo_sales_dataframe()
+                month_df = df[df["month_key"] == month].copy()
+                if base:
+                    month_df = month_df[month_df["base"] == base]
+                if region:
+                    month_df = month_df[month_df["region"] == region]
+            if month_df.empty:
+                return {
+                    "items": [],
+                    "price_trend": {"months": [month], "qty": [0], "avg_price": [0]},
+                }
 
         group_cols = [
             "inventory_org",

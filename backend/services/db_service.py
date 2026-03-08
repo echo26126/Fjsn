@@ -217,7 +217,8 @@ Base Alias:
             for item in inventory_daily
         ):
             inventory_daily = []
-        production_rows = december_report_service.get_daily_production_rows(day or 31, base=base, category="")
+        point = f"2025-12-{(day or 31):02d}"
+        production_rows = december_report_service.get_production_report(period="day", point=point, base=base, category="")
         production_rows = production_rows[:20]
         if production_rows and all(
             float(item.get("actual_qty") or 0.0) == 0.0 and float(item.get("month_prod") or 0.0) == 0.0
