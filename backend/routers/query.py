@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
-import random
 from services.december_report_service import december_report_service
 from services.december_sales_service import december_sales_service
 
@@ -39,28 +38,7 @@ def query_production(
             category=category or "",
         )
         return {"items": rows}
-    plan_values = [6.5, 10.9, 6.4, 5.0, 3.6, 0.2]
-    actual_values = [6.3, 10.4, 6.1, 4.8, 3.3, 0.0]
-    category_factors = [("水泥", 0.7), ("熟料", 0.3)]
-    if category == "cement":
-        category_factors = [("水泥", 1)]
-    elif category == "clinker":
-        category_factors = [("熟料", 1)]
-    return {
-        "items": [
-            {
-                "base": name,
-                "category": cat,
-                "period": "2026-02",
-                "plan_qty": round(plan * factor, 1),
-                "actual_qty": round(actual * factor, 1),
-                "variance_pct": round((actual * factor / (plan * factor) - 1) * 100, 1),
-                "utilization": round(75 + random.uniform(0, 20), 1),
-            }
-            for (name, plan, actual) in zip(BASES, plan_values, actual_values)
-            for cat, factor in category_factors
-        ]
-    }
+    return {"items": []}
 
 
 @router.get("/production-report")

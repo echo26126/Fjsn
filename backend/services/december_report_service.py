@@ -232,7 +232,7 @@ class DecemberReportService:
             "M68": "宁德建福",
         }
         result = {
-            base: {"days": [f"12月{i}日" for i in range(1, 32)], "clinker_inventory": [0.0 for _ in range(31)], "cement_inventory": [0.0 for _ in range(31)]}
+            base: {"days": [], "clinker_inventory": [], "cement_inventory": []}
             for base in BASE_NAMES
         }
         if not self.report_path.exists():
@@ -241,6 +241,10 @@ class DecemberReportService:
             df = pd.read_excel(self.report_path, sheet_name="库存", header=None, dtype=str).fillna("")
         except Exception:
             return result
+        for base in BASE_NAMES:
+            result[base]["days"] = [f"12月{i}日" for i in range(1, 32)]
+            result[base]["clinker_inventory"] = [0.0 for _ in range(31)]
+            result[base]["cement_inventory"] = [0.0 for _ in range(31)]
         for _, row in df.iterrows():
             row_values = row.astype(str).tolist()
             code = _norm_text(row_values[1] if len(row_values) > 1 else "")
@@ -407,7 +411,7 @@ class DecemberReportService:
                         for row in rows:
                             row["period"] = "2025-12"
                     return rows
-        return self._build_synthetic_rows(period=period, point=point, base=base, category=category)
+        return []
 
     def get_equipment_summary(self, point: str, base: str = "") -> List[Dict[str, float]]:
         month = int(point[5:7]) if len(point) >= 7 and point[5:7].isdigit() else 0
@@ -438,24 +442,7 @@ class DecemberReportService:
                 })
             if rows:
                 return rows
-        prod_rows = self.get_production_report(period="day", point=point, base=base, category="cement")
-        return [
-            {
-                "base": row["base"],
-                "run_rate_day": round(row["utilization"] * 0.96, 2),
-                "run_rate_month": row["utilization"],
-                "run_rate_year": round(min(100.0, row["utilization"] * 1.06), 2),
-                "runtime_day": round(24 * row["utilization"] / 100, 2),
-                "runtime_month": round(24 * 30 * row["utilization"] / 100 / 6, 2),
-                "runtime_year": round(24 * 365 * row["utilization"] / 100 / 6, 2),
-                "stop_hours_day": round(max(0.0, 24 - (24 * row["utilization"] / 100)), 2),
-                "stop_hours_month": round(max(0.0, 24 * 31 - (24 * 30 * row["utilization"] / 100 / 6)), 2),
-                "stop_hours_year": round(max(0.0, 24 * 365 - (24 * 365 * row["utilization"] / 100 / 6)), 2),
-                "stop_count": int(row.get("kiln_stop_times", 0)),
-                "equipment_count": 6,
-            }
-            for row in prod_rows
-        ]
+        return []
 
     def get_equipment_detail(self, point: str, base: str = "") -> List[Dict[str, Any]]:
         month = int(point[5:7]) if len(point) >= 7 and point[5:7].isdigit() else 0
@@ -466,28 +453,7 @@ class DecemberReportService:
                 detail = [item for item in detail if item.get("base") == base]
             if detail:
                 return detail
-        summary = self.get_equipment_summary(point=point, base=base)
-        rows: List[Dict[str, Any]] = []
-        for item in summary:
-            rows.append({
-                "base": item["base"],
-                "device": "主机组",
-                "device_key": f"{item['base']}|主机组",
-                "throughput_day": 0.0,
-                "throughput_month": 0.0,
-                "throughput_year": 0.0,
-                "run_rate_day": 0.0,
-                "run_rate_month": item["run_rate_month"],
-                "run_rate_year": item["run_rate_year"],
-                "runtime_day": 0.0,
-                "runtime_month": item["runtime_month"],
-                "runtime_year": item["runtime_year"],
-                "stop_hours_day": item.get("stop_hours_day", 0.0),
-                "stop_hours_month": item.get("stop_hours_month", 0.0),
-                "stop_hours_year": item.get("stop_hours_year", 0.0),
-                "stop_count": item.get("stop_count", 0),
-            })
-        return rows
+        return []
 
     def get_stop_reason_summary(self, point: str, base: str = "") -> List[Dict[str, Any]]:
         month = int(point[5:7]) if len(point) >= 7 and point[5:7].isdigit() else 0
@@ -508,18 +474,7 @@ class DecemberReportService:
                     "其他": int(hit.get("其他", 0)),
                 })
             return rows
-        summary = self.get_equipment_summary(point=point, base=base)
-        return [
-            {
-                "base": item["base"],
-                "续停": int(item.get("stop_count", 0)),
-                "避峰": 0,
-                "检修": 0,
-                "故障": 0,
-                "其他": 0,
-            }
-            for item in summary
-        ]
+        return []
 
 
 december_report_service = DecemberReportService()

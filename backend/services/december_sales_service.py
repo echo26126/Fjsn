@@ -57,9 +57,17 @@ class DecemberSalesService:
 
     @lru_cache(maxsize=1)
     def _load_rows(self) -> pd.DataFrame:
+        empty_df = pd.DataFrame(columns=[
+            "出库日期", "库存组织", "部门", "订单客户", "开票客户", "地区分类", "客户类型细分", "客户类型",
+            "到达地", "市场类型", "物料名称", "型号", "规格", "数量", "含税净价", "价税合计"
+        ])
         if not self.sales_path.exists():
-            return pd.DataFrame(columns=["出库日期", "库存组织", "部门", "物料名称", "型号", "规格", "数量", "含税净价", "价税合计"])
-        df = pd.read_excel(self.sales_path, sheet_name=0)
+            df = empty_df.copy()
+        else:
+            try:
+                df = pd.read_excel(self.sales_path, sheet_name=0)
+            except Exception:
+                df = empty_df.copy()
         expected_columns = [
             "出库日期",
             "库存组织",
@@ -102,6 +110,56 @@ class DecemberSalesService:
         df["line_amount_yuan"] = df["价税合计"].map(_to_float)
         df["month_key"] = df["出库日期"].dt.strftime("%Y-%m")
         return df
+
+    def _build_demo_sales_dataframe(self) -> pd.DataFrame:
+        base_region_map = {
+            "安砂建福": ["三明销售区域", "南平销售区域"],
+            "永安建福": ["三明销售区域", "泉州销售区域"],
+            "顺昌炼石": ["南平销售区域", "福州北销售区域"],
+            "福州炼石": ["福州南销售区域", "福州北销售区域"],
+            "宁德建福": ["宁德销售区域", "福州北销售区域"],
+            "金银湖水泥": ["泉州销售区域", "厦漳销售区域"],
+        }
+        customer_types = [
+            ("基础客户", "经销--一般工程"),
+            ("工程客户", "经销--搅拌站"),
+            ("大型终端客户", "直销--重点工程"),
+        ]
+        model_specs = [("建福P.O42.5(散)", "P.O42.5", "散装"), ("建福P.O42.5(袋)", "P.O42.5", "袋装")]
+        month_qty_factor = [0.75, 0.80, 0.86, 0.91, 0.95, 0.99, 1.03, 1.00, 0.97, 1.01, 1.04, 1.00]
+        month_price_factor = [0.94, 0.95, 0.97, 0.99, 1.00, 1.02, 1.03, 1.02, 1.00, 1.00, 1.01, 1.00]
+        rows: List[Dict[str, Any]] = []
+        for month in range(1, 13):
+            for base, regions in base_region_map.items():
+                for region_idx, region in enumerate(regions):
+                    for c_idx, (ctype, cdetail) in enumerate(customer_types):
+                        for m_idx, (material_name, spec, package) in enumerate(model_specs):
+                            seed = random.Random(f"{month}-{base}-{region}-{ctype}-{spec}")
+                            base_qty = 480 + region_idx * 65 + c_idx * 55 + m_idx * 45
+                            qty_ton = max(40.0, base_qty * month_qty_factor[month - 1] * (0.92 + seed.random() * 0.16))
+                            unit_price = (255 + c_idx * 6 + region_idx * 4 + m_idx * 3) * month_price_factor[month - 1]
+                            amount = round(qty_ton * unit_price, 2)
+                            rows.append(
+                                {
+                                    "出库日期": f"2025-{month:02d}-{min(28, 4 + c_idx * 6 + m_idx * 3):02d}",
+                                    "库存组织": base,
+                                    "部门": region,
+                                    "订单客户": f"{region[:2]}{ctype}{m_idx + 1}号",
+                                    "开票客户": f"{region[:2]}开票客户{c_idx + 1}",
+                                    "地区分类": region.replace("销售区域", "市"),
+                                    "客户类型细分": cdetail,
+                                    "客户类型": ctype,
+                                    "到达地": f"{region[:2]}工程",
+                                    "市场类型": "核心市场" if c_idx == 2 else "非核心市场",
+                                    "物料名称": material_name,
+                                    "型号": spec,
+                                    "规格": package,
+                                    "数量": round(qty_ton, 2),
+                                    "含税净价": round(unit_price, 2),
+                                    "价税合计": amount,
+                                }
+                            )
+        return pd.DataFrame(rows)
 
     def get_sales_payload(self, base: str = "", region: str = "", month: str = "2025-12") -> Dict[str, Any]:
         year = str(month)[:4] if len(str(month)) >= 4 else "2025"

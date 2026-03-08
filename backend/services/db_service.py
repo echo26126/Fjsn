@@ -171,6 +171,14 @@ Base Alias:
     def build_file_context(self, question: str) -> Dict[str, Any]:
         day = self._extract_day(question)
         base = self._extract_base(question)
+        report_path = Path(december_report_service.report_path)
+        sales_path = Path(december_sales_service.sales_path)
+        orders_path = Path(__file__).resolve().parents[2] / "12月销售订单数据.xls"
+        source_status = {
+            "production_report": report_path.exists(),
+            "sales_file": sales_path.exists(),
+            "orders_file": orders_path.exists(),
+        }
         inventory_daily: List[Dict[str, Any]] = []
         for base_name in BASE_NAMES:
             if base and base_name != base:
@@ -203,10 +211,25 @@ Base Alias:
                             "cement_inventory_wt": round(float(cement[-1]) / 10000, 2),
                         }
                     )
+        if inventory_daily and all(
+            float(item.get("clinker_inventory_wt") or 0.0) == 0.0 and float(item.get("cement_inventory_wt") or 0.0) == 0.0
+            for item in inventory_daily
+        ):
+            inventory_daily = []
         production_rows = december_report_service.get_daily_production_rows(day or 31, base=base, category="")
         production_rows = production_rows[:20]
+        if production_rows and all(
+            float(item.get("actual_qty") or 0.0) == 0.0 and float(item.get("month_prod") or 0.0) == 0.0
+            for item in production_rows
+        ):
+            production_rows = []
         sales_payload = december_sales_service.get_sales_payload(base=base, region="", month="2025-12")
         sales_items = list(sales_payload.get("items", []) or [])[:40]
+        if sales_items and all(
+            float(item.get("qty") or 0.0) == 0.0 and float(item.get("amount") or 0.0) == 0.0
+            for item in sales_items
+        ):
+            sales_items = []
         orders_df = self._build_orders_df()
         if base and not orders_df.empty:
             orders_df = orders_df[orders_df["base"] == base]
@@ -226,6 +249,20 @@ Base Alias:
                 }
                 for _, row in grouped.head(20).iterrows()
             ]
+        if order_rows and all(
+            float(item.get("order_qty") or 0.0) == 0.0 and float(item.get("outbound_qty") or 0.0) == 0.0
+            for item in order_rows
+        ):
+            order_rows = []
+        if not source_status["orders_file"]:
+            order_rows = []
+        available_sections = {
+            "inventory_daily": bool(inventory_daily),
+            "production_daily": bool(production_rows),
+            "sales_items": bool(sales_items),
+            "orders_summary": bool(order_rows),
+        }
+        core_ready = bool(inventory_daily) or bool(production_rows) or bool(sales_items) or bool(order_rows)
         return {
             "scope": "2025-12",
             "question": question,
@@ -247,6 +284,12 @@ Base Alias:
             "production_daily": production_rows,
             "sales_items": sales_items,
             "orders_summary": order_rows,
+            "data_status": {
+                "source_status": source_status,
+                "available_sections": available_sections,
+                "ready": core_ready,
+                "missing_sources": [k for k, v in source_status.items() if not v],
+            },
         }
 
     async def execute_query(self, sql: str) -> List[Dict[str, Any]]:

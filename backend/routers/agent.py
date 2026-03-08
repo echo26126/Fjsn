@@ -54,6 +54,19 @@ def _fmt_num(value: Any, digits: int = 2) -> str:
         text = text.rstrip("0").rstrip(".")
     return text
 
+def _missing_data_message(context: Dict[str, Any]) -> str:
+    data_status = context.get("data_status") or {}
+    missing_sources = list(data_status.get("missing_sources") or [])
+    source_label_map = {
+        "production_report": "生产日报文件",
+        "sales_file": "销售明细文件",
+        "orders_file": "订单明细文件",
+    }
+    if missing_sources:
+        labels = [source_label_map.get(k, k) for k in missing_sources]
+        return f"当前环境未加载业务数据文件（缺失：{'、'.join(labels)}），为避免误导已停止自动分析。请先完成数据挂载/上传，再进行问答。"
+    return "当前环境暂无可用业务数据，为避免误导已停止自动分析。请先完成数据挂载/上传，再进行问答。"
+
 def _fallback_sales_answer(question: str, context: Dict[str, Any]) -> str:
     items = list(context.get("sales_items") or [])
     if not items:
@@ -137,13 +150,22 @@ def _fallback_production_answer(context: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 def _build_local_fallback_answer(question: str, context: Dict[str, Any]) -> str:
+    data_status = context.get("data_status") or {}
     text = str(question or "")
     if any(k in text for k in ["库存", "库容"]):
+        if not context.get("inventory_daily"):
+            return _missing_data_message(context)
         return _fallback_inventory_answer(context)
     if any(k in text for k in ["产量", "生产", "窑"]):
+        if not context.get("production_daily"):
+            return _missing_data_message(context)
         return _fallback_production_answer(context)
     if any(k in text for k in ["销售", "客户", "订单", "出库", "均价", "金额"]):
+        if not context.get("sales_items") and not context.get("orders_summary"):
+            return _missing_data_message(context)
         return _fallback_sales_answer(question, context)
+    if not bool(data_status.get("ready")):
+        return _missing_data_message(context)
     if context.get("sales_items"):
         return _fallback_sales_answer(question, context)
     if context.get("inventory_daily"):

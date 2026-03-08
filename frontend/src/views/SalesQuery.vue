@@ -556,44 +556,38 @@ function renderTrendChart() {
   const ratios = labels.map(label => Number(typeMap.get(label)?.ratio || 0))
   const unit = metric === 'qty' ? '万吨' : '万元'
   const seriesName = metric === 'qty' ? '总量' : '总价'
-  const pieData = labels.map((name, idx) => ({
-    name,
-    value: Number(values[idx] || 0),
-    ratio: Number(ratios[idx] || 0),
-  }))
   trendChart.setOption({
     tooltip: {
-      trigger: 'item',
-      formatter: (p: any) => `${p.name}<br/>${seriesName}：${Number(p.value || 0).toFixed(2)} ${unit}<br/>占比：${(Number(p.data?.ratio || 0) * 100).toFixed(2)}%`
+      trigger: 'axis',
+      formatter: (params: any) => {
+        const p = params?.[0]
+        if (!p) return ''
+        const idx = Number(p.dataIndex || 0)
+        const ratio = (ratios[idx] || 0) * 100
+        return `${labels[idx]}<br/>${seriesName}：${values[idx].toFixed(2)} ${unit}<br/>占比：${ratio.toFixed(2)}%`
+      }
     },
-    legend: {
-      type: 'scroll',
-      orient: 'vertical',
-      right: 8,
-      top: 'middle',
-      textStyle: { fontSize: 11 },
-    },
+    grid: { top: 35, right: 30, bottom: 50, left: 55 },
+    xAxis: { type: 'category', data: labels, axisLabel: { rotate: 22, fontSize: 10 } },
+    yAxis: { type: 'value', name: unit, axisLabel: { fontSize: 10 } },
     series: [
       {
         name: seriesName,
-        type: 'pie',
-        radius: ['38%', '68%'],
-        center: ['38%', '50%'],
-        data: pieData,
-        minAngle: 4,
+        type: 'bar',
+        data: values,
+        itemStyle: { color: '#1677ff', borderRadius: [4, 4, 0, 0] },
         label: {
           show: true,
-          formatter: (p: any) => `${p.name}\n${(Number(p.data?.ratio || 0) * 100).toFixed(1)}%`,
-          fontSize: 10,
-        },
-        labelLine: { length: 10, length2: 8 },
-        emphasis: { scale: true, scaleSize: 8 },
+          position: 'top',
+          formatter: (p: any) => `${(((ratios[p.dataIndex] || 0) * 100).toFixed(1))}%`,
+          fontSize: 10
+        }
       },
     ],
   })
   trendChart.off('click')
   trendChart.on('click', (params: any) => {
-    const customerType = String(params?.name || '')
+    const customerType = labels[params?.dataIndex || 0]
     if (!customerType) return
     customerTypeDrill.value = customerType
     if (trendRegion.value !== 'all') {
